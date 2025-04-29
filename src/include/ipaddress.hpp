@@ -43,6 +43,7 @@ public:
   static bool TryParse(string_t input, IPAddress &result,
                        CastParameters &parameters);
   static IPAddress FromString(string_t input);
+  bool IsCIDR();
 
   string ToString() const;
   IPAddress Netmask() const;
