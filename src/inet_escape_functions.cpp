@@ -133,7 +133,7 @@ struct Matcher {
     auto input_data = input.GetData();
     auto input_size = input.GetSize();
     auto num_of_digits = input_size - i; // number of digits after i index
-    if (num_of_digits > 2 && input_data[i] == '&') { // the beggining of a match
+    if (num_of_digits > 2 && input_data[i] == '&') { // the beginning of a match
       if (input_data[i + 1] == '#') {
         if (input_data[i + 2] == 'x' || input_data[i + 2] == 'X') {
           if (num_of_digits == 3 || input_data[i + 3] == '&' ||
