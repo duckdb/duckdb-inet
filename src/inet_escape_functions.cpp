@@ -192,9 +192,9 @@ struct Matcher {
     }
     // special character references
     if (0x80 <= num && num <= 0x9f) {
-      auto invaid_charref = bind_data.special_invalid_charrefs.find(num);
-      if (invaid_charref != bind_data.special_invalid_charrefs.end()) {
-        auto ch = invaid_charref->second;
+      auto invalid_charref = bind_data.special_invalid_charrefs.find(num);
+      if (invalid_charref != bind_data.special_invalid_charrefs.end()) {
+        auto ch = invalid_charref->second;
         OP::Operation(ch, result);
       } else { // non printable control points
         if (num == 0x81) {
