@@ -209,7 +209,7 @@ struct Matcher {
           OP::Operation("\\x9d", result);
         } else {
           throw InternalException(
-              "Tried to decode contol point %d, but it was not handled", num);
+              "Tried to decode control point %d, but it was not handled", num);
         }
       }
       return;
