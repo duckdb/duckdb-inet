@@ -75,6 +75,10 @@ void InetExtension::Load(DuckDB &db) {
                                   ScalarFunction(">>=", {inet_type, inet_type},
                                                  LogicalType::BOOLEAN,
                                                  INetFunctions::ContainsRight));
+  ExtensionUtil::RegisterFunction(
+        *db.instance,
+        ScalarFunction("expand_cidr", {inet_type}, LogicalType::LIST(inet_type),
+        INetFunctions::ExpandCIDR));
 }
 
 std::string InetExtension::Name() { return "inet"; }

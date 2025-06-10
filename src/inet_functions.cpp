@@ -261,4 +261,98 @@ void INetFunctions::ContainsRight(DataChunk &args, ExpressionState &state,
       });
 }
 
+//  Expands an IP address in CIDR notation into a list of all individual IP addresses in that range.
+//
+//  For example:
+//  - "192.168.1.0/24" would expand to all IP addresses from 192.168.1.0 to 192.168.1.255
+//  - A single IP "192.168.1.1" (non-CIDR) would return just that single IP
+//
+//  @param args DataChunk containing the input INET address(es)
+//  @param state Current expression state
+//  @param result Vector to store the resulting list of expanded IP addresses
+//
+//  The function:
+//  1. Handles both IPv4 and IPv6 addresses
+//  2. For CIDR notation:
+//     - IPv4: Generates 2^(32-mask) addresses
+//     - IPv6: Generates 2^(128-mask) addresses
+//  3. For non-CIDR addresses: Returns a single-element list with the original IP
+//  4. Returns NULL for invalid inputs
+//
+//  Each resulting IP address is returned as a struct containing:
+//  - ip_type: Type of IP address (IPv4 or IPv6)
+//  - address: The actual IP address value
+//  - mask: Full host mask (32 for IPv4, 128 for IPv6)
+void INetFunctions::ExpandCIDR(DataChunk & args, ExpressionState & state, Vector & result) {
+  auto & ipaddress_vector = args.data[0];
+  UnifiedVectorFormat ipaddress_data;
+  ipaddress_vector.ToUnifiedFormat(args.size(), ipaddress_data);
+
+  auto & entries = StructVector::GetEntries(ipaddress_vector);
+  auto ip_type_data = FlatVector::GetData < uint8_t > ( * entries[0]);
+  auto address_data = FlatVector::GetData < hugeint_t > ( * entries[1]);
+  auto mask_data = FlatVector::GetData < uint16_t > ( * entries[2]);
+
+  for (idx_t i = 0; i < args.size(); i++) {
+    idx_t address_idx = ipaddress_data.sel -> get_index(i);
+
+    if (!ipaddress_data.validity.RowIsValid(address_idx)) {
+      result.SetValue(i, Value());
+      continue;
+    }
+
+    vector < Value > ip_list;
+    auto inet_type = LogicalType::STRUCT({
+      make_pair("ip_type", LogicalType::UTINYINT),
+      make_pair("address", LogicalType::HUGEINT),
+      make_pair("mask", LogicalType::USMALLINT)
+    });
+
+    auto addr_type = IPAddressType(ip_type_data[address_idx]);
+    auto addr = FromCompatAddr(address_data[address_idx], addr_type);
+    auto mask = mask_data[address_idx];
+    IPAddress inet(addr_type, addr, mask);
+
+    if (inet.IsCIDR()) {
+      // Calculate first and last address in CIDR range
+      IPAddress network = inet.Network();
+      IPAddress broadcast = inet.Broadcast();
+      hugeint_t hosts;
+      if (addr_type == IPAddressType::IP_ADDRESS_V4) {
+        // For IPv4: 2^(32-mask) addresses
+        if (mask > 32) continue; // Invalid mask
+        hosts = hugeint_t(1) << (32 - mask);
+      } else {
+        // For IPv6: 2^(128-mask) addresses
+        if (mask > 128) continue; // Invalid mask
+        // TODO if (mask < 64) limit expansion for very large networks
+        hosts = hugeint_t(1) << (128 - mask);
+      }
+
+      // Add all addresses in the range
+      auto current = network;
+      hugeint_t one(1);
+      for (hugeint_t j = 0; j < hosts && current.address <= broadcast.address; j = j + one) {
+        ip_list.emplace_back(Value::STRUCT(inet_type, {
+          Value::UTINYINT(uint8_t(current.type)),
+          Value::HUGEINT(ToCompatAddr(current.address, current.type)),
+          Value::USMALLINT(current.type == IPAddressType::IP_ADDRESS_V4 ? 32 : 128) // Full host mask
+        }));
+
+        // Increment address within network bounds
+        current.address = current.address + one;
+      }
+    } else {
+      // Just add the single IP address
+      ip_list.emplace_back(Value::STRUCT(inet_type, {
+        Value::UTINYINT(ip_type_data[address_idx]),
+        Value::HUGEINT(address_data[address_idx]),
+        Value::USMALLINT(addr_type == IPAddressType::IP_ADDRESS_V4 ? 32 : 128) // Full host mask
+      }));
+    }
+
+    result.SetValue(i, Value::LIST(inet_type, std::move(ip_list)));
+  }
+}
+
 } // namespace duckdb
