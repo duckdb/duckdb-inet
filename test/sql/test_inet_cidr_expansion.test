@@ -1,0 +1,32 @@
+# name: test/sql/inet/test_inet_cidr_expansion.test
+# description: Test inet cidr expansion function
+# group: [inet]
+
+require inet
+
+statement ok
+PRAGMA enable_verification
+
+# basic expansion
+query I
+SELECT expand_cidr(inet '192.168.1.0/30');
+----
+[192.168.1.0, 192.168.1.1, 192.168.1.2, 192.168.1.3]
+
+# bare ip
+query I
+SELECT expand_cidr(inet '192.168.1.0');
+----
+[192.168.1.0]
+
+# ipv6
+query I
+SELECT expand_cidr(inet '2001:db8::/126');
+----
+[2001:db8::, 2001:db8::1, 2001:db8::2, 2001:db8::3]
+
+# bare ipv6
+query I
+SELECT expand_cidr('2603:3005:1507:5900:9c2b:2430:c08e:addf'::INET);
+----
+[2603:3005:1507:5900:9c2b:2430:c08e:addf]

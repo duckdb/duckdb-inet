@@ -69,6 +69,10 @@ static void LoadInternal(ExtensionLoader &loader) {
   loader.RegisterFunction(ScalarFunction(">>=", {inet_type, inet_type},
                                                  LogicalType::BOOLEAN,
                                                  INetFunctions::ContainsRight));
+  ExtensionUtil::RegisterFunction(
+        *db.instance,
+        ScalarFunction("expand_cidr", {inet_type}, LogicalType::LIST(inet_type),
+        INetFunctions::ExpandCIDR));
 }
 
 void InetExtension::Load(ExtensionLoader &loader) {

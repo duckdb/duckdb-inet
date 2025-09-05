@@ -437,6 +437,11 @@ static string ToStringIPv6(const IPAddress &addr) {
   return result.str();
 }
 
+bool IPAddress::IsCIDR() {
+    return (type == IPAddressType::IP_ADDRESS_V4 && mask < IPV4_DEFAULT_MASK) ||
+           (type == IPAddressType::IP_ADDRESS_V6 && mask < IPV6_DEFAULT_MASK);
+}
+
 string IPAddress::ToString() const {
   if (type == IPAddressType::IP_ADDRESS_V4) {
     return ToStringIPv4(this->address, this->mask);
