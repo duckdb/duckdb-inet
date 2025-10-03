@@ -91,3 +91,17 @@ statement error
 SELECT '999.999.999.999/24'::INET
 ----
 ^
+
+statement ok
+CREATE TABLE inet(ip VARCHAR);
+
+statement ok
+INSERT INTO inet VALUES ('127.0.0.1'), ('999.999.999.999/24'), ('127.0.0.1/33333333333333333333'), ('255.255.255.255/31')
+
+query I
+SELECT TRY_CAST(ip AS INET) FROM inet;
+----
+127.0.0.1
+NULL
+NULL
+255.255.255.255/31

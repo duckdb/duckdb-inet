@@ -1,3 +1,5 @@
+project(inet)
+
 cmake_minimum_required(VERSION 3.5...3.29)
 option(DUCKDB_WASM_EXTENSION "Whether compiling for Wasm target" OFF)
 
@@ -6,6 +8,7 @@ set(DUCKDB_EXTENSION_API_VERSION_UNSTABLE 1)
 ###
 # Configuration
 ###
+
 if(NOT DEFINED EXTENSION_NAME)
     message(FATAL_ERROR "DuckDB extension name is required")
 endif()
@@ -28,14 +31,12 @@ endif()
 ###
 # Build
 ###
-project(${EXTENSION_NAME} LANGUAGES C)
-
 # Create Extension library
 set(EXTENSION_SOURCES
-        src/inet_extension.c
-        src/inet_html.c
-        src/inet_html_table.c
-        src/inet_ipaddress.c
+        src/inet_extension.cpp
+        src/inet_html.cpp
+        src/inet_html_table.cpp
+        src/inet_ipaddress.cpp
 )
 
 if (DUCKDB_WASM_EXTENSION)
@@ -43,6 +44,8 @@ if (DUCKDB_WASM_EXTENSION)
 else()
     add_library(${EXTENSION_NAME} SHARED ${EXTENSION_SOURCES})
 endif()
+# for building with DuckDB - FIXME - this needs to be reconciled somehow
+# build_loadable_extension_capi_unstable(${EXTENSION_NAME} ${EXTENSION_SOURCES})
 
 # Hide symbols
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
@@ -56,3 +59,6 @@ target_include_directories(${EXTENSION_NAME} PRIVATE src)
 
 # Include DuckDB C API headers
 target_include_directories(${EXTENSION_NAME} PRIVATE duckdb_capi)
+
+# Include DuckDB C++ API headers
+target_include_directories(${EXTENSION_NAME} PRIVATE duckdb-cpp-api)

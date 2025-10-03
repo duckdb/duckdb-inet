@@ -1,8 +1,9 @@
-#include "inet_ipaddress.h"
+#include "inet_ipaddress.hpp"
 
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdexcept>
 
 static const int32_t HEX_BITSIZE = 4;
 static const int32_t MAX_QUIBBLE_DIGITS = 4;
@@ -105,13 +106,15 @@ static size_t quibble_half_address_bit_shift(size_t quibble, int *is_upper) {
 	return quibble_shift * IPV6_QUIBBLE_BITS;
 }
 
-static bool try_parse_ipv4(const char *data, size_t size, INET_IPAddress *result, char **error_message) {
+static INET_IPAddress parse_ipv4(const char *data, size_t size) {
 	size_t c = 0;
 	size_t number_count = 0;
 	uint32_t address = 0;
 	size_t start = 0;
 
-	result->type = INET_IP_ADDRESS_V4;
+	INET_IPAddress result;
+
+	result.type = INET_IP_ADDRESS_V4;
 
 parse_number:
 
@@ -121,24 +124,18 @@ parse_number:
 		c++;
 	}
 	if (start == c) {
-		if (error_message) {
-			*error_message = "Expected a number";
-		}
-		return false;
+		throw std::runtime_error("Expected a number");
 	}
 	uint8_t number;
 	if (!try_cast_string_to_uint8(data + start, c - start, &number)) {
-		if (error_message) {
-			*error_message = "Expected a number between 0 and 255";
-		}
-		return false;
+		throw std::runtime_error("Expected a number between 0 and 255");
 	}
 
 	address <<= 8;
 	address += number;
 	number_count++;
-	result->address.upper = 0;
-	result->address.lower = address;
+	result.address.upper = 0;
+	result.address.lower = address;
 	if (number_count == 4) {
 		goto parse_mask;
 	} else {
@@ -146,24 +143,18 @@ parse_number:
 	}
 parse_dot:
 	if (c == size || data[c] != '.') {
-		if (error_message) {
-			*error_message = "Expected a dot";
-		}
-		return false;
+		throw std::runtime_error("Expected a dot");
 	}
 	c++;
 	goto parse_number;
 parse_mask:
 	if (c == size) {
 		// no mask, set to default
-		result->mask = IPV4_DEFAULT_MASK;
-		return true;
+		result.mask = IPV4_DEFAULT_MASK;
+		return result;
 	}
 	if (data[c] != '/') {
-		if (error_message) {
-			*error_message = "Expected a slash";
-		}
-		return false;
+		throw std::runtime_error("Expected a slash");
 	}
 	c++;
 	start = c;
@@ -172,29 +163,25 @@ parse_mask:
 	}
 	uint8_t mask;
 	if (!try_cast_string_to_uint8(data + start, c - start, &mask)) {
-		if (error_message) {
-			*error_message = "Expected a number between 0 and 32";
-		}
-		return false;
+		throw std::runtime_error("Expected a number between 0 and 32");
 	}
 	if (mask > 32) {
-		if (error_message) {
-			*error_message = "Expected a number between 0 and 32";
-		}
-		return false;
+		throw std::runtime_error("Expected a number between 0 and 32");
 	}
-	result->mask = mask;
-	return true;
+	result.mask = mask;
+	return result;
 }
 
-static int try_parse_ipv6(const char *data, size_t size, INET_IPAddress *result, char **error_message) {
+static INET_IPAddress parse_ipv6(const char *data, size_t size) {
 	size_t c = 0;
 	int parsed_quibble_count = 0;
 	uint16_t quibbles[INET_IPV6_NUM_QUIBBLE] = {};
 	int first_quibble_count = -1;
 
-	result->type = INET_IP_ADDRESS_V6;
-	result->mask = IPV6_DEFAULT_MASK;
+	INET_IPAddress result;
+
+	result.type = INET_IP_ADDRESS_V6;
+	result.mask = IPV6_DEFAULT_MASK;
 
 	while (c < size && parsed_quibble_count < INET_IPV6_NUM_QUIBBLE) {
 		size_t start = c;
@@ -204,10 +191,7 @@ static int try_parse_ipv6(const char *data, size_t size, INET_IPAddress *result,
 		size_t len = c - start;
 
 		if (len > MAX_QUIBBLE_DIGITS) {
-			if (error_message) {
-				*error_message = "Expected 4 or fewer hex digits";
-			}
-			return false;
+			throw std::runtime_error("Expected 4 or fewer hex digits");
 		}
 
 		if (c < size && data[c] == '.') {
@@ -218,16 +202,10 @@ static int try_parse_ipv6(const char *data, size_t size, INET_IPAddress *result,
 			}
 
 			if (c < size && data[c] != '/') {
-				if (error_message) {
-					*error_message = "IPv4 format can only be used for the final 2 quibbles.";
-				}
-				return false;
+				throw std::runtime_error("IPv4 format can only be used for the final 2 quibbles.");
 			}
 
-			INET_IPAddress ipv4;
-			if (!try_parse_ipv4(data + start, c - start, &ipv4, error_message)) {
-				return false;
-			}
+			auto ipv4 = parse_ipv4(data + start, c - start);
 
 			quibbles[parsed_quibble_count++] = ipv4.address.lower >> IPV6_QUIBBLE_BITS;
 			quibbles[parsed_quibble_count++] = ipv4.address.lower & 0xffff;
@@ -235,10 +213,7 @@ static int try_parse_ipv6(const char *data, size_t size, INET_IPAddress *result,
 		}
 
 		if (c < size && data[c] != ':' && data[c] != '/') {
-			if (error_message) {
-				*error_message = "Unexpected character found";
-			}
-			return false;
+			throw std::runtime_error("Unexpected character found");
 		}
 
 		if (len > 0) {
@@ -248,16 +223,10 @@ static int try_parse_ipv6(const char *data, size_t size, INET_IPAddress *result,
 		// Check for double colon
 		if (c + 1 < size && data[c] == ':' && data[c + 1] == ':') {
 			if (first_quibble_count != -1) {
-				if (error_message) {
-					*error_message = "Encountered more than one double-colon";
-				}
-				return false;
+				throw std::runtime_error("Encountered more than one double-colon");
 			}
 			if (c + 2 < size && data[c + 2] == ':') {
-				if (error_message) {
-					*error_message = "Encountered more than two consecutive colons";
-				}
-				return false;
+				throw std::runtime_error("Encountered more than two consecutive colons");
 			}
 
 			first_quibble_count = parsed_quibble_count;
@@ -273,50 +242,35 @@ static int try_parse_ipv6(const char *data, size_t size, INET_IPAddress *result,
 
 			uint8_t mask;
 			if (!try_cast_string_to_uint8(data + start, c - start, &mask)) {
-				if (error_message) {
-					*error_message = "Expected a number between 0 and 128";
-				}
-				return false;
+				throw std::runtime_error("Expected a number between 0 and 128");
 			}
 			if (mask > IPV6_DEFAULT_MASK) {
-				if (error_message) {
-					*error_message = "Expected a number between 0 and 128";
-				}
-				return false;
+				throw std::runtime_error("Expected a number between 0 and 128");
 			}
 
-			result->mask = mask;
+			result.mask = mask;
 			break;
 		}
 		c++;
 	}
 
 	if (parsed_quibble_count < INET_IPV6_NUM_QUIBBLE && first_quibble_count == -1) {
-		if (error_message) {
-			*error_message = "Expected 8 sets of 4 hex digits.";
-		}
-		return false;
+		throw std::runtime_error("Expected 8 sets of 4 hex digits.");
 	}
 
 	if (c < size) {
-		if (error_message) {
-			*error_message = "Unexpected extra characters";
-		}
-		return false;
+		throw std::runtime_error("Unexpected extra characters");
 	}
 
-	result->address.upper = 0;
-	result->address.lower = 0;
+	result.address.upper = 0;
+	result.address.lower = 0;
 
 	size_t output_idx = 0;
 	for (int parsed_idx = 0; parsed_idx < parsed_quibble_count; parsed_idx++, output_idx++) {
 		if (parsed_idx == first_quibble_count) {
 			int missing_quibbles = INET_IPV6_NUM_QUIBBLE - parsed_quibble_count;
 			if (missing_quibbles == 0) {
-				if (error_message) {
-					*error_message = "Invalid double-colon, too many hex digits.";
-				}
-				return false;
+				throw std::runtime_error("Invalid double-colon, too many hex digits.");
 			}
 			output_idx += missing_quibbles;
 		}
@@ -324,13 +278,13 @@ static int try_parse_ipv6(const char *data, size_t size, INET_IPAddress *result,
 		int is_upper;
 		size_t bitshift = quibble_half_address_bit_shift(output_idx, &is_upper);
 		if (is_upper) {
-			result->address.upper |= (uint64_t)quibbles[parsed_idx] << bitshift;
+			result.address.upper |= (uint64_t)quibbles[parsed_idx] << bitshift;
 		} else {
-			result->address.lower |= (uint64_t)quibbles[parsed_idx] << bitshift;
+			result.address.lower |= (uint64_t)quibbles[parsed_idx] << bitshift;
 		}
 	}
 
-	return true;
+	return result;
 }
 
 // Public function implementations
@@ -351,7 +305,7 @@ INET_IPAddress ipaddress_from_ipv6(duckdb_uhugeint address, uint16_t mask) {
 	return result;
 }
 
-bool ipaddress_try_parse(const char *data, size_t size, INET_IPAddress *result, char **error_message) {
+INET_IPAddress ipaddress_from_string(const char *data, size_t size) {
 	size_t c = 0;
 
 	// Detect IPv4 vs IPv6
@@ -360,40 +314,21 @@ bool ipaddress_try_parse(const char *data, size_t size, INET_IPAddress *result, 
 	}
 
 	if (c == size) {
-		if (error_message) {
-			*error_message = "Expected an IP address";
-		}
-		return false;
+		throw std::runtime_error("Expected an IP address");
 	}
 
 	if (data[c] == ':') {
-		return try_parse_ipv6(data, size, result, error_message);
+		return parse_ipv6(data, size);
 	}
 
 	if (c == 0) {
-		if (error_message) {
-			*error_message = "Expected a number";
-		}
-		return false;
+		throw std::runtime_error("Expected a number");
 	}
 
 	if (data[c] == '.') {
-		return try_parse_ipv4(data, size, result, error_message);
+		return parse_ipv4(data, size);
 	}
-
-	if (error_message) {
-		*error_message = "Expected an IP address";
-	}
-
-	return false;
-}
-
-INET_IPAddress ipaddress_from_string(const char *buffer, size_t buffer_size, char **error_message) {
-	INET_IPAddress result;
-	if (!ipaddress_try_parse(buffer, buffer_size, &result, error_message)) {
-		result.type = INET_IP_ADDRESS_INVALID;
-	}
-	return result;
+	throw std::runtime_error("Expected an IP address");
 }
 
 static size_t ipadress_to_string_ipv4(const INET_IPAddress *ip, char *buffer, size_t buffer_size) {
@@ -513,9 +448,11 @@ size_t ipaddress_to_string(const INET_IPAddress *ip, char *buffer, size_t buffer
 }
 
 INET_IPAddress ipaddress_netmask(const INET_IPAddress *ip) {
+	duckdb_uhugeint ipv4_mask = { IPV4_NETWORK_MASK, 0 };
+	duckdb_uhugeint ip_shift = { ip->mask, 0 };
 	duckdb_uhugeint mask =
-	    ip->type == INET_IP_ADDRESS_V4 ? (duckdb_uhugeint) {IPV4_NETWORK_MASK, 0} : IPV6_NETWORK_MASK;
-	duckdb_uhugeint shift = uhugeint_shift_right(mask, (duckdb_uhugeint) {ip->mask, 0});
+	    ip->type == INET_IP_ADDRESS_V4 ? ipv4_mask : IPV6_NETWORK_MASK;
+	duckdb_uhugeint shift = uhugeint_shift_right(mask, ip_shift);
 	duckdb_uhugeint netmask = uhugeint_xor(mask, shift);
 
 	INET_IPAddress result;

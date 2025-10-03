@@ -2243,7 +2243,7 @@ GPERF_INPUT = """
 %{ 
 #include <stdint.h>
 #include <string.h>
-#include "inet_html_table.h"
+#include "inet_html_table.hpp"
 %}
 %define lookup-function-name inet_html_entity_lookup
 %compare-strncmp
@@ -2268,7 +2268,7 @@ GPERF_INPUT += "%%\n"
 
 # Launch gperf as a subprocess and pipe the input to it
 # And pipe the output to a file
-with open("inet_html_table.c", "w") as f:
+with open("inet_html_table.cpp", "w") as f:
     process = subprocess.Popen(
         ["gperf", "-L", "ANSI-C"], stdin=subprocess.PIPE, stdout=f, stderr=subprocess.PIPE, text=True
     )
@@ -2277,4 +2277,4 @@ with open("inet_html_table.c", "w") as f:
         print("Error running gperf:")
         print(stderr)
     else:
-        print("gperf output written to html_entity_lookup.c")
+        print("gperf output written to html_entity_lookup.cpp")

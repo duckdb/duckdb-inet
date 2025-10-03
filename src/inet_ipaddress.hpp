@@ -19,7 +19,7 @@ typedef struct {
 // Try to parse an IP address from a string.
 // If error_message is not NULL, it will be set to an error message on failure.
 // The error_message does not need to be freed, it is a static string.
-INET_IPAddress ipaddress_from_string(const char *buffer, size_t buffer_size, char **error_message);
+INET_IPAddress ipaddress_from_string(const char *buffer, size_t buffer_size);
 
 // Returns length of string written to buffer. Returns 0 if buffer is too small.
 size_t ipaddress_to_string(const INET_IPAddress *ip, char *buffer, size_t buffer_size);

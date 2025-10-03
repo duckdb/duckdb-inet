@@ -1,5 +1,6 @@
-#include "inet_html.h"
-#include "inet_html_table.h"
+#include "inet_html.hpp"
+#include "inet_html_table.hpp"
+#include "duckdb/duckdb_stable.hpp"
 
 #include <ctype.h>
 #include <stdbool.h>
@@ -126,6 +127,20 @@ static bool decode_codepoint(uint32_t cp, uint32_t *sz, char *c) {
 	return codepoint_to_utf8(cp, sz, c);
 }
 
+int64_t strtoll_non_null_terminated(const char *str, const char *end, const char **num_end, int base) {
+	idx_t pos = 0;
+	int64_t result;
+	if (base == 10) {
+		result = duckdb_stable::StringUtil::ToSigned(str, end - str, pos);
+	} else if (base == 16) {
+		result = static_cast<int64_t>(duckdb_stable::StringUtil::FromHex(str, end - str, pos));
+	} else {
+		throw std::runtime_error("Unsupported base");
+	}
+	*num_end = str + pos;
+	return result;
+}
+
 static const char *decode_entity(const char *beg, const char *end, uint32_t *cp1, uint32_t *cp2) {
 	const char *pos = beg;
 
@@ -141,8 +156,8 @@ static const char *decode_entity(const char *beg, const char *end, uint32_t *cp1
 				base = 16;
 			}
 
-			char *num_end = NULL;
-			long value = strtol(pos, &num_end, base);
+			const char *num_end = NULL;
+			int64_t value = strtoll_non_null_terminated(pos, end, &num_end, base);
 			if (num_end != pos && value >= 0) {
 				if (value > UINT32_MAX) {
 					value = 0; // Out of range, use replacement character
