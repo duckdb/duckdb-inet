@@ -185,11 +185,12 @@ static INET_TYPE AddImplementation(INET_TYPE ip, hugeint_t val) {
   if (val > 0) {
     address_out =
         AddOperatorOverflowCheck::Operation<uhugeint_t, uhugeint_t, uhugeint_t>(
-            address_in, val);
+            address_in, (uhugeint_t)val);
   } else {
+    // TODO: this is off for when val is the minimal uhugeint_t value
     address_out =
         SubtractOperatorOverflowCheck::Operation<uhugeint_t, uhugeint_t,
-                                                 uhugeint_t>(address_in, -val);
+                                                 uhugeint_t>(address_in, (uhugeint_t)(-val));
   }
 
   if (addr_type == IPAddressType::IP_ADDRESS_V4 &&
