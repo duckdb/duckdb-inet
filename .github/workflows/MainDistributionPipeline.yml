@@ -6,11 +6,9 @@ on:
   push:
   pull_request:
   workflow_dispatch:
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref || '' }}-${{ github.base_ref || '' }}-${{ github.ref != 'refs/heads/main' || github.sha }}
   cancel-in-progress: true
-
 jobs:
   duckdb-build:
     name: Build extension binaries
@@ -20,7 +18,7 @@ jobs:
       ci_tools_version: v1.4.1
       extension_name: inet
       extra_toolchains: python3
-
+    if: (github.event_name != 'push' || !contains(lower(join(github.event.commits.*.message, ' ')), 'bump to')) && (github.event_name != 'pull_request' || !contains(lower(github.event.pull_request.title), 'bump to'))
 # FIXME: This doesnt work with c-based extensions yet
 #  duckdb-deploy:
 #    name: Deploy extension binaries
