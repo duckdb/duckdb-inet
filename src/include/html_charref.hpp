@@ -4570,9 +4570,9 @@ private:
 };
 
 // definition of the static members
-const vector<string> HTML5NameCharrefs::owned_strings =
+const inline vector<string> HTML5NameCharrefs::owned_strings =
     HTML5NameCharrefs::initialize_vector();
-const string_map_t<HTMLEscapeCodepoint> HTML5NameCharrefs::mapped_strings =
+const inline string_map_t<HTMLEscapeCodepoint> HTML5NameCharrefs::mapped_strings =
     HTML5NameCharrefs::initialize_map();
 
 } // namespace duckdb
