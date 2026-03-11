@@ -202,6 +202,93 @@ public:
 	}
 };
 
+class BitToINetCast : public StandardCastFunction<BitToINetCast, PrimitiveType<string_t>, INET_EXECUTOR_TYPE> {
+public:
+	LogicalType SourceType() override {
+		return LogicalType(DUCKDB_TYPE_BIT);
+	}
+	int64_t ImplicitCastCost() override {
+		return 0;
+	}
+
+	static TARGET_TYPE::ARG_TYPE Cast(const SOURCE_TYPE::ARG_TYPE &input) {
+		auto data = input.GetData();
+		auto size = input.GetSize();
+		// BIT format: byte 0 = padding count, bytes 1+ = address data.
+		// Valid IPs must be exactly 32 or 128 bits (no padding).
+		if (size < 2 || data[0] != 0) {
+			throw std::runtime_error("Cannot cast BIT to INET: must be exactly 32 or 128 bits");
+		}
+
+		auto addr_size = size - 1;
+		auto addr_data = reinterpret_cast<const uint8_t *>(data + 1);
+
+		INET_IPAddressType type;
+		duckdb_uhugeint address = {};
+		uint16_t mask;
+		if (addr_size == 4) {
+			type = INET_IP_ADDRESS_V4;
+			address.lower = ((uint64_t)addr_data[0] << 24) | ((uint64_t)addr_data[1] << 16) |
+			                ((uint64_t)addr_data[2] << 8) | (uint64_t)addr_data[3];
+			mask = 32;
+		} else if (addr_size == 16) {
+			type = INET_IP_ADDRESS_V6;
+			for (int i = 0; i < 8; i++) {
+				address.upper |= (uint64_t)addr_data[i] << (56 - 8 * i);
+				address.lower |= (uint64_t)addr_data[8 + i] << (56 - 8 * i);
+			}
+			mask = 128;
+		} else {
+			throw std::runtime_error("Cannot cast BIT to INET: must be exactly 32 or 128 bits");
+		}
+
+		TARGET_TYPE::ARG_TYPE result;
+		result.a_val = (uint8_t)type;
+		result.b_val = to_compatible_address(address, type);
+		result.c_val = mask;
+
+		return result;
+	}
+};
+
+struct BitBuffer {
+	char buffer[17]; // max: 1 padding byte + 16 IPv6 bytes
+};
+
+class INetToBitCast : public StandardCastFunctionExt<INetToBitCast, INET_EXECUTOR_TYPE, PrimitiveType<string_t>, BitBuffer> {
+public:
+	LogicalType TargetType() override {
+		return LogicalType(DUCKDB_TYPE_BIT);
+	}
+	int64_t ImplicitCastCost() override {
+		return 0;
+	}
+
+	static TARGET_TYPE::ARG_TYPE Cast(const SOURCE_TYPE::ARG_TYPE &input, STATIC_DATA &data) {
+		auto type = (INET_IPAddressType)input.a_val;
+		auto address = from_compatible_address(input.b_val, type);
+
+		auto &buffer = data.buffer;
+		buffer[0] = 0; // no padding
+
+		if (type == INET_IP_ADDRESS_V4) {
+			buffer[1] = (address.lower >> 24) & 0xFF;
+			buffer[2] = (address.lower >> 16) & 0xFF;
+			buffer[3] = (address.lower >> 8) & 0xFF;
+			buffer[4] = address.lower & 0xFF;
+
+			return string_t(buffer, 5);
+		} else {
+			for (int i = 0; i < 8; i++) {
+				buffer[1 + i] = (address.upper >> (56 - 8 * i)) & 0xFF;
+				buffer[9 + i] = (address.lower >> (56 - 8 * i)) & 0xFF;
+			}
+
+			return string_t(buffer, 17);
+		}
+	}
+};
+
 class HostFunction : public UnaryFunctionExt<HostFunction, INET_EXECUTOR_TYPE, PrimitiveType<string_t>, StringBuffer> {
 public:
 	const char *Name() const override {
@@ -508,6 +595,12 @@ DUCKDB_EXTENSION_CPP_ENTRYPOINT(INET) {
 
 	VarcharToINetCast text_to_inet;
 	Register(text_to_inet);
+
+	BitToINetCast bit_to_inet;
+	Register(bit_to_inet);
+
+	INetToBitCast inet_to_bit;
+	Register(inet_to_bit);
 
 	// scalar functions
 	HostFunction host_function;
