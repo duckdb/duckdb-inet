@@ -208,7 +208,7 @@ public:
 		return LogicalType(DUCKDB_TYPE_BIT);
 	}
 	int64_t ImplicitCastCost() override {
-		return 0;
+		return -1;
 	}
 
 	static TARGET_TYPE::ARG_TYPE Cast(const SOURCE_TYPE::ARG_TYPE &input) {
@@ -261,13 +261,25 @@ public:
 		return LogicalType(DUCKDB_TYPE_BIT);
 	}
 	int64_t ImplicitCastCost() override {
-		return 0;
+		return -1;
 	}
 
 	static TARGET_TYPE::ARG_TYPE Cast(const SOURCE_TYPE::ARG_TYPE &input, STATIC_DATA &data) {
 		auto type = (INET_IPAddressType)input.a_val;
-		auto address = from_compatible_address(input.b_val, type);
+		if (type != INET_IP_ADDRESS_V4 && type != INET_IP_ADDRESS_V6) {
+			throw std::runtime_error("Invalid IP address type");
+		}
 
+		// The BIT value holds only the address, so the netmask would be lost.
+		uint64_t address_bits = type == INET_IP_ADDRESS_V4 ? 32 : 128;
+		if (input.c_val != address_bits) {
+			auto err = type == INET_IP_ADDRESS_V4
+				? "Cannot cast INET to BIT: IPv4 netmask must be 32, use set_masklen() to set it"
+				: "Cannot cast INET to BIT: IPv6 netmask must be 128, use set_masklen() to set it";
+			throw std::runtime_error(err);
+		}
+
+		auto address = from_compatible_address(input.b_val, type);
 		auto &buffer = data.buffer;
 		buffer[0] = 0; // no padding
 
@@ -395,6 +407,31 @@ public:
 		result.a_val = (uint8_t)new_inet.type;
 		result.b_val = to_compatible_address(new_inet.address, new_inet.type);
 		result.c_val = new_inet.mask;
+		return result;
+	}
+};
+
+class SetMasklenFunction : public BinaryFunction<SetMasklenFunction, INET_EXECUTOR_TYPE, PrimitiveType<hugeint_t>, INET_EXECUTOR_TYPE> {
+public:
+	const char *Name() const override {
+		return "set_masklen";
+	}
+	static RESULT_TYPE::ARG_TYPE Operation(const A_TYPE::ARG_TYPE &input, const B_TYPE::ARG_TYPE &mask) {
+		auto type = (INET_IPAddressType)input.a_val;
+		if (type != INET_IP_ADDRESS_V4 && type != INET_IP_ADDRESS_V6) {
+			throw std::runtime_error("Invalid IP address type");
+		}
+
+		uint64_t address_bits = type == INET_IP_ADDRESS_V4 ? 32 : 128;
+		bool in_range = mask.upper() == 0 && mask.lower() <= address_bits;
+		if (!in_range) {
+			throw OutOfRangeException("Invalid netmask {}: expected a number between 0 and {}", mask, address_bits);
+		}
+
+		RESULT_TYPE::ARG_TYPE result;
+		result.a_val = input.a_val;
+		result.b_val = input.b_val;
+		result.c_val = (uint16_t)mask.lower();
 		return result;
 	}
 };
@@ -617,6 +654,9 @@ DUCKDB_EXTENSION_CPP_ENTRYPOINT(INET) {
 
 	BroadcastFunction broadcast_function;
 	Register(broadcast_function);
+
+	SetMasklenFunction set_masklen_function;
+	Register(set_masklen_function);
 
 	AddFunction add_function;
 	Register(add_function);

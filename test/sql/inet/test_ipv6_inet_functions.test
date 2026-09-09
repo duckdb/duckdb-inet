@@ -66,6 +66,12 @@ SELECT netmask(INET '2001:db8:3c4d::/0')
 ----
 ::/0
 
+# set_masklen
+statement error
+SELECT set_masklen(INET '2001:db8:3c4d::1', 129)
+----
+Invalid netmask 129: expected a number between 0 and 128
+
 # network
 query I
 SELECT network(INET '2001:db8:3c4d::/48')
