@@ -1,3 +1,5 @@
+#include "inet_extension.hpp"
+
 #include "duckdb_extension.h"
 #include "inet_html.hpp"
 #include "inet_ipaddress.hpp"
@@ -359,6 +361,55 @@ static INET_T AddImplementation(const INET_T &lhs, const hugeint_t &rhs) {
 
 }
 
+static INET_T AndImplementation(const INET_T &lhs, const INET_T &rhs) {
+	INET_EXECUTOR_TYPE result;
+	auto l_addr_type = (INET_IPAddressType) lhs.a_val,
+		 r_addr_type = (INET_IPAddressType) rhs.a_val;
+	if (l_addr_type != r_addr_type) {
+		throw TypeCompatibilityException("Cannot mix IPv4 and IPv6 addresses in bit-and");
+	}
+	duckdb_uhugeint address_out = from_compatible_address(lhs.b_val, l_addr_type),
+		another_address = from_compatible_address(rhs.b_val, r_addr_type);
+	address_out.lower &= another_address.lower;
+	address_out.upper &= another_address.upper;
+
+	result.a_val = lhs.a_val;
+	result.b_val = to_compatible_address(address_out, l_addr_type);
+	result.c_val = lhs.c_val;
+	return result;
+}
+
+static INET_T OrImplementation(const INET_T &lhs, const INET_T &rhs) {
+	INET_EXECUTOR_TYPE result;
+	auto l_addr_type = (INET_IPAddressType) lhs.a_val,
+		 r_addr_type = (INET_IPAddressType) rhs.a_val;
+	if (l_addr_type != r_addr_type) {
+		throw TypeCompatibilityException("Cannot mix IPv4 and IPv6 addresses in bit-or");
+	}
+	duckdb_uhugeint address_out = from_compatible_address(lhs.b_val, l_addr_type),
+		another_address = from_compatible_address(rhs.b_val, r_addr_type);
+	address_out.lower |= another_address.lower;
+	address_out.upper |= another_address.upper;
+
+	result.a_val = lhs.a_val;
+	result.b_val = to_compatible_address(address_out, l_addr_type);
+	result.c_val = lhs.c_val;
+	return result;
+}
+
+static INET_T InvertImplementation(const INET_T &input) {
+	INET_EXECUTOR_TYPE result;
+	auto l_addr_type = (INET_IPAddressType) input.a_val;
+	duckdb_uhugeint address_out = from_compatible_address(input.b_val, l_addr_type);
+	address_out.lower = ~address_out.lower;
+	address_out.upper = ~address_out.upper;
+
+	result.a_val = input.a_val;
+	result.b_val = to_compatible_address(address_out, l_addr_type);
+	result.c_val = input.c_val;
+	return result;
+}
+
 class AddFunction : public BinaryFunction<AddFunction, INET_EXECUTOR_TYPE, PrimitiveType<hugeint_t>, INET_EXECUTOR_TYPE> {
 public:
 	const char *Name() const override {
@@ -376,6 +427,36 @@ public:
 	}
 	static RESULT_TYPE::ARG_TYPE Operation(const A_TYPE::ARG_TYPE &lhs, const B_TYPE::ARG_TYPE &rhs) {
 		return AddImplementation(lhs, rhs.negate());
+	}
+};
+
+class AndFunction : public BinaryFunction<AndFunction, INET_EXECUTOR_TYPE, INET_EXECUTOR_TYPE, INET_EXECUTOR_TYPE> {
+public:
+	const char *Name() const override {
+		return "&";
+	}
+	static INET_EXECUTOR_TYPE::ARG_TYPE Operation(const A_TYPE::ARG_TYPE &lhs, const B_TYPE::ARG_TYPE &rhs)	{
+		return AndImplementation(lhs, rhs);
+	}
+};
+
+class OrFunction : public BinaryFunction<OrFunction, INET_EXECUTOR_TYPE, INET_EXECUTOR_TYPE, INET_EXECUTOR_TYPE> {
+public:
+	const char *Name() const override {
+		return "|";
+	}
+	static RESULT_TYPE::ARG_TYPE Operation(const A_TYPE::ARG_TYPE &lhs, const B_TYPE::ARG_TYPE &rhs) {
+		return OrImplementation(lhs, rhs);
+	}
+};
+
+class InvertFunction : public UnaryFunction<InvertFunction, INET_EXECUTOR_TYPE, INET_EXECUTOR_TYPE> {
+public:
+	const char *Name() const override {
+		return "~";
+	}
+	static RESULT_TYPE::ARG_TYPE Operation(const INPUT_TYPE::ARG_TYPE &input) {
+		return InvertImplementation(input);
 	}
 };
 
@@ -530,6 +611,15 @@ DUCKDB_EXTENSION_CPP_ENTRYPOINT(INET) {
 
 	SubtractFunction subtract_function;
 	Register(subtract_function);
+
+	AndFunction and_function;
+	Register(and_function);
+
+	OrFunction or_function;
+	Register(or_function);
+
+	InvertFunction invert_function;
+	Register(invert_function);
 
 	ContainsLeftFunction contains_left;
 	Register(contains_left);

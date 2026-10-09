@@ -119,3 +119,99 @@ query I
 SELECT inet '0.0.0.0/0' <<= inet '192.168.1.0/0'
 ----
 true
+
+# bit-and
+query I
+SELECT inet '1.2.3.4/8' &  inet '0.0.255.255'
+----
+0.0.3.4/8
+
+# one more
+query I
+SELECT inet '1.2.3.4/8' &  inet '1.1.1.1'
+----
+1.0.1.0/8
+
+# the 2-nd operand's net mask is ignored
+query I
+SELECT inet '1.2.3.4/8' &  inet '1.1.1.1/32'
+----
+1.0.1.0/8
+
+# zero-sized one is ignored as well
+query I
+SELECT inet '1.2.3.4/8' &  inet '1.1.1.1/0'
+----
+1.0.1.0/8
+
+# string operand is casted to inet automatically
+query I
+SELECT inet '1.2.3.4/8' & '1.1.1.1/0'
+----
+1.0.1.0/8
+
+# string operand is casted to inet automatically
+query I
+SELECT inet '1.2.3.4/8' & '1.1.1.1/0'
+----
+1.0.1.0/8
+
+# the first one also
+query I
+SELECT '1.2.3.4/8' & inet '1.1.1.1/0'
+----
+1.0.1.0/8
+
+# bit-or
+query I
+SELECT inet '1.2.3.4/8' |  inet '0.0.255.255'
+----
+1.2.255.255/8
+
+# one more
+query I
+SELECT inet '1.2.3.4/8' |  inet '1.1.1.1'
+----
+1.3.3.5/8
+
+# the 2-nd operand's net mask is ignored
+query I
+SELECT inet '1.2.3.4/8' |  inet '1.1.1.1/32'
+----
+1.3.3.5/8
+
+# zero-sized one is ignored as well
+query I
+SELECT inet '1.2.3.4/8' |  inet '1.1.1.1/0'
+----
+1.3.3.5/8
+
+# string operand is casted to inet automatically
+query I
+SELECT inet '1.2.3.4/8' | '1.1.1.1/0'
+----
+1.3.3.5/8
+
+# string operand is casted to inet automatically
+query I
+SELECT inet '1.2.3.4/8' | '1.1.1.1/0'
+----
+1.3.3.5/8
+
+# the first one also
+query I
+SELECT '1.2.3.4/8' | inet '1.1.1.1/0'
+----
+1.3.3.5/8
+
+# bitwise inversion
+query I
+select  ~(inet '1.2.3.4')
+----
+254.253.252.251
+
+# bitwise inversion preserves netmask
+query I
+select  ~(inet '1.2.3.4/8')
+----
+254.253.252.251/8
