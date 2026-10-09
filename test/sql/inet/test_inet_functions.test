@@ -56,6 +56,46 @@ SELECT netmask(INET '192.168.1.5/0')
 ----
 0.0.0.0/0
 
+# set_masklen
+statement error
+SELECT set_masklen(INET '192.168.1.5', 33)
+----
+Invalid netmask 33: expected a number between 0 and 32
+
+statement error
+SELECT set_masklen(INET '192.168.1.5', -1)
+----
+expected a number between 0 and 32
+
+# Values above 16 bits must not wrap into a valid netmask
+statement error
+SELECT set_masklen(INET '192.168.1.5', 65560)
+----
+Invalid netmask 65560: expected a number between 0 and 32
+
+# An INET built from a raw struct with an invalid ip_type is rejected
+statement error
+SELECT set_masklen({'ip_type': 0::UTINYINT, 'address': 1::HUGEINT, 'mask': 8::USMALLINT}::INET, 24)
+----
+Invalid IP address type
+
+# Table inputs
+statement ok
+CREATE TABLE masklen_input(id INTEGER, ip INET, m INTEGER);
+
+statement ok
+INSERT INTO masklen_input VALUES (1, '10.0.0.1/8', 16), (2, '10.0.0.2', 32), (3, NULL, 24), (4, '2001:db8::5/32', 64), (5, '10.0.0.3', NULL), (6, '::1', 0);
+
+query I
+SELECT set_masklen(ip, m) FROM masklen_input ORDER BY id
+----
+10.0.0.1/16
+10.0.0.2
+NULL
+2001:db8::5/64
+NULL
+::1/0
+
 # network
 query I
 SELECT network(INET '192.168.1.5/24')
