@@ -4,7 +4,6 @@ cmake_minimum_required(VERSION 3.5...3.29)
 option(DUCKDB_WASM_EXTENSION "Whether compiling for Wasm target" OFF)
 
 set(EXTENSION_NAME inet)
-set(DUCKDB_EXTENSION_API_VERSION_UNSTABLE 1)
 
 ###
 # Configuration

@@ -9,7 +9,7 @@ require inet
 require notwindows
 
 # load the DB from disk
-load __TEST_DIR__/store_ipv6_inet.db
+load {TEST_DIR}/store_ipv6_inet.db
 
 statement ok
 PRAGMA enable_verification
