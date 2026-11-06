@@ -13,7 +13,7 @@ use duckdb_neo::{
 };
 
 use crate::html;
-use crate::inet::Inet;
+use crate::inet::{self, InetStorage};
 use crate::ip::{IpAddress, OffsetError};
 use crate::rows::{self, binary, unary};
 
@@ -39,13 +39,13 @@ impl ScalarCallbacks for Scalar {
 }
 
 fn host(args: &VectorCollection, output: Vector<'_, Unknown>) -> Result<()> {
-    rows::write_text(output.cast()?, unary::<Inet>(args)?, |inet| {
+    rows::write_text(output.cast()?, unary::<InetStorage>(args)?, |inet| {
         Ok(Some(IpAddress::try_from(inet)?.host()))
     })
 }
 
 fn family(args: &VectorCollection, output: Vector<'_, Unknown>) -> Result<()> {
-    rows::write_values(output.cast()?, unary::<Inet>(args)?, |inet| {
+    rows::write_values(output.cast()?, unary::<InetStorage>(args)?, |inet| {
         Ok(Some(IpAddress::try_from(inet)?.family().version()))
     })
 }
@@ -55,8 +55,8 @@ fn map_inet(
     output: Vector<'_, Unknown>,
     f: impl Fn(IpAddress) -> IpAddress,
 ) -> Result<()> {
-    rows::write_values(output.cast()?, unary::<Inet>(args)?, |inet| {
-        Ok(Some(Inet::from(f(IpAddress::try_from(inet)?))))
+    rows::write_values(output.cast()?, unary::<InetStorage>(args)?, |inet| {
+        Ok(Some(InetStorage::from(f(IpAddress::try_from(inet)?))))
     })
 }
 
@@ -79,10 +79,13 @@ fn offset_inet(
 ) -> Result<()> {
     rows::write_values(
         output.cast()?,
-        binary::<Inet, HugeInt>(args)?,
+        binary::<InetStorage, HugeInt>(args)?,
         |(inet, offset)| {
             let offset = i128::from(offset.upper) << 64 | i128::from(offset.lower);
-            Ok(Some(Inet::from(f(IpAddress::try_from(inet)?, offset)?)))
+            Ok(Some(InetStorage::from(f(
+                IpAddress::try_from(inet)?,
+                offset,
+            )?)))
         },
     )
 }
@@ -98,7 +101,7 @@ fn subtract(args: &VectorCollection, output: Vector<'_, Unknown>) -> Result<()> 
 fn contained_by(args: &VectorCollection, output: Vector<'_, Unknown>) -> Result<()> {
     rows::write_values(
         output.cast()?,
-        binary::<Inet, Inet>(args)?,
+        binary::<InetStorage, InetStorage>(args)?,
         |(inet, network)| {
             Ok(Some(
                 IpAddress::try_from(inet)?.is_subnet_of(IpAddress::try_from(network)?),
@@ -110,7 +113,7 @@ fn contained_by(args: &VectorCollection, output: Vector<'_, Unknown>) -> Result<
 fn contains(args: &VectorCollection, output: Vector<'_, Unknown>) -> Result<()> {
     rows::write_values(
         output.cast()?,
-        binary::<Inet, Inet>(args)?,
+        binary::<InetStorage, InetStorage>(args)?,
         |(network, inet)| {
             Ok(Some(
                 IpAddress::try_from(inet)?.is_subnet_of(IpAddress::try_from(network)?),
@@ -135,7 +138,7 @@ fn html_unescape(args: &VectorCollection, output: Vector<'_, Unknown>) -> Result
 
 /// Register all scalar functions; `INET` must be registered first.
 pub(crate) fn register(extension: &Extension) -> Result<()> {
-    let inet = Inet::logical_type(extension)?;
+    let inet = inet::logical_type(extension)?;
     let varchar = String::logical_type(extension)?;
     let boolean = bool::logical_type(extension)?;
 
@@ -151,7 +154,7 @@ pub(crate) fn register(extension: &Extension) -> Result<()> {
             .documentation(FunctionDocumentationBuilder::new().description(description));
         ScalarFunctionBuilder::new(name, signature, Scalar(exec)).register(extension)
     };
-    let inet_param = |name: &str| FunctionParameter::new::<Inet>(name);
+    let inet_param = |name: &str| FunctionParameter::with_type(name, inet.clone());
     let text_param = || FunctionParameter::new::<String>("text");
 
     register(

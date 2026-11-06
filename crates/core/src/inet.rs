@@ -1,8 +1,7 @@
 //! The `INET` logical type and its casts from and to `VARCHAR`.
 
-use duckdb_loadable_macros::{AsVectorElement, AsWritableVectorElement};
 use duckdb_neo::{
-    DuckDBType, Error, Result,
+    AsDuckDB, DuckDBType, Error, Result,
     cast::{CastFunctionBuilder, CastFunctionCallbacks, CastMode},
     connection::{Context, FFILink},
     custom_type::CustomType,
@@ -22,33 +21,29 @@ const IPV6: u8 = 2;
 /// Flipping the top bit of IPv6 addresses makes the signed `address` sort like the unsigned address.
 const IPV6_SORT_BIT: u128 = 1 << 127;
 
-/// The physical layout of an `INET` value, a `STRUCT` aliased as `INET`.
+/// The physical layout of an `INET` value. Its `DuckDBType` is the bare `STRUCT`; [`logical_type`]
+/// adds the `INET` alias.
 ///
 /// Struct comparison orders values by family, then address, then prefix length.
-#[derive(Debug, AsVectorElement, AsWritableVectorElement)]
-pub(crate) struct Inet {
+#[derive(Debug, AsDuckDB)]
+pub(crate) struct InetStorage {
     ip_type: u8,
     address: HugeInt,
     mask: u16,
 }
 
-impl DuckDBType for Inet {
-    fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
-        LogicalType::from_text(
-            link,
-            "STRUCT(ip_type UTINYINT, address HUGEINT, mask USMALLINT)",
-        )?
-        .with_alias(link, "INET")
-    }
+/// The `INET` logical type.
+pub(crate) fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
+    InetStorage::logical_type(link)?.with_alias(link, "INET")
 }
 
-impl From<IpAddress> for Inet {
+impl From<IpAddress> for InetStorage {
     fn from(ip: IpAddress) -> Self {
         let (ip_type, bits) = match ip.family() {
             Family::V4 => (IPV4, ip.address()),
             Family::V6 => (IPV6, ip.address() ^ IPV6_SORT_BIT),
         };
-        Inet {
+        InetStorage {
             ip_type,
             address: HugeInt {
                 lower: bits as u64,
@@ -59,10 +54,10 @@ impl From<IpAddress> for Inet {
     }
 }
 
-impl TryFrom<InetRef<'_>> for IpAddress {
+impl TryFrom<InetStorageRef<'_>> for IpAddress {
     type Error = Error;
 
-    fn try_from(inet: InetRef<'_>) -> Result<Self> {
+    fn try_from(inet: InetStorageRef<'_>) -> Result<Self> {
         let (family, sort_bit) = match inet.ip_type {
             Some(&IPV4) => (Family::V4, 0),
             Some(&IPV6) => (Family::V6, IPV6_SORT_BIT),
@@ -110,21 +105,21 @@ struct ParseInet;
 
 impl CastFunctionCallbacks for ParseInet {
     type InputType = String;
-    type OutputType = Inet;
+    type OutputType = InetStorage;
 
     fn exec(
         &self,
         _context: &Context,
         mode: CastMode,
         input: Vector<'_, String>,
-        output: Vector<'_, Inet>,
+        output: Vector<'_, InetStorage>,
     ) -> Result<()> {
         let input = input.reader()?;
         rows::write_values(output, input.iter(), |text| {
             try_row(
                 mode,
                 text.parse::<IpAddress>()
-                    .map(Inet::from)
+                    .map(InetStorage::from)
                     .map_err(Error::from),
             )
         })
@@ -134,14 +129,14 @@ impl CastFunctionCallbacks for ParseInet {
 struct FormatInet;
 
 impl CastFunctionCallbacks for FormatInet {
-    type InputType = Inet;
+    type InputType = InetStorage;
     type OutputType = String;
 
     fn exec(
         &self,
         _context: &Context,
         mode: CastMode,
-        input: Vector<'_, Inet>,
+        input: Vector<'_, InetStorage>,
         output: Vector<'_, String>,
     ) -> Result<()> {
         let input = input.reader()?;
@@ -153,7 +148,7 @@ impl CastFunctionCallbacks for FormatInet {
 
 /// Register the `INET` type with explicit casts from and to `VARCHAR`.
 pub(crate) fn register(extension: &Extension) -> Result<()> {
-    let inet = Inet::logical_type(extension)?;
+    let inet = logical_type(extension)?;
     let varchar = String::logical_type(extension)?;
     CustomType::new("INET", inet.clone()).register(extension)?;
     CastFunctionBuilder::new(varchar.clone(), inet.clone(), ParseInet).register(extension)?;

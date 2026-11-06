@@ -10,7 +10,6 @@ license = "MIT"
 
 [workspace.dependencies]
 duckdb-neo = { version = "=0.20000.1", features = ["build-extension"] }
-duckdb-loadable-macros = { version = "=1.20000.1", features = ["neo"] }
 inet_core = { path = "crates/core" }
 
 [profile.release]
