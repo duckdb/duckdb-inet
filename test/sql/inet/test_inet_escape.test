@@ -491,3 +491,25 @@ statement error
 SELECT html_unescape('&notin', '&notin;');
 ----
 Binder Error: No function matches the given name and argument types
+
+# text outside character references is kept as is
+query I
+SELECT html_unescape('ß&amp;é 🦆');
+----
+ß&é 🦆
+
+query I
+SELECT html_unescape('a' || chr(13) || chr(11) || 'b') = 'a' || chr(13) || chr(11) || 'b';
+----
+true
+
+# numeric references beyond 64 bits
+query II
+SELECT html_unescape('&#18446744073709551681;'), html_unescape('&#xFFFFFFFFFFFFFFFF;');
+----
+�	�
+
+query I
+SELECT html_escape('<"duck">', quote := false);
+----
+&lt;"duck"&gt;
