@@ -1,0 +1,14 @@
+# Loads the built extension into a linked DuckDB. A separate workspace, because the
+# extension's `build-extension` feature would otherwise be unified into this client.
+[package]
+name = "inet_integration_tests"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dev-dependencies]
+duckdb-neo = "=0.20000.1"
+ipnet = "2"
+tempfile = "3"

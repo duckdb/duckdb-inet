@@ -30,6 +30,8 @@ address and prefix length.
 - `crates/core` (`inet_core`): the `INET` type, casts and functions. `ip` and `html` are plain Rust with unit tests.
 - `crates/native` (`inet`): the loadable extension (`cdylib`).
 - `crates/wasm` (`inet_wasm`): the Wasm build (`staticlib`).
+- `test/integration`: Rust tests that load the built extension into DuckDB through `duckdb-neo`, comparing
+  against the `ipnet` crate. A separate Cargo workspace, since it links DuckDB instead of being loaded by it.
 - `scripts/generate_html_entities.py`: regenerates `crates/core/src/html/entities.rs` from `scripts/html_entities.json`.
 
 ## Building
@@ -52,5 +54,5 @@ duckdb -unsigned -cmd "LOAD '$PWD/build/release/inet.duckdb_extension';"
 
 ```shell
 cargo test --workspace   # unit tests
-make test_release        # SQL logic tests in test/sql and test/test_extension.py, or make test_debug
+make test_release        # SQL logic tests in test/sql and test/integration, or make test_debug
 ```
