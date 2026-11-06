@@ -33,7 +33,13 @@ release: build_extension_library_release build_extension_with_metadata_release
 
 test: test_debug
 test_debug: test_extension_debug
+ifneq ($(SKIP_TESTS),1)
+	$(PYTHON_VENV_BIN) test/test_extension.py build/debug/$(EXTENSION_FILENAME) -v
+endif
 test_release: test_extension_release
+ifneq ($(SKIP_TESTS),1)
+	$(PYTHON_VENV_BIN) test/test_extension.py build/release/$(EXTENSION_FILENAME) -v
+endif
 
 clean: clean_build clean_rust
 clean_all: clean_configure clean

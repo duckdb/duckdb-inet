@@ -53,7 +53,7 @@ fn family(args: &VectorCollection, output: Vector<'_, Unknown>) -> Result<()> {
 fn map_inet(
     args: &VectorCollection,
     output: Vector<'_, Unknown>,
-    f: fn(IpAddress) -> IpAddress,
+    f: impl Fn(IpAddress) -> IpAddress,
 ) -> Result<()> {
     rows::write_values(output.cast()?, unary::<Inet>(args)?, |inet| {
         Ok(Some(Inet::from(f(IpAddress::try_from(inet)?))))
@@ -75,7 +75,7 @@ fn broadcast(args: &VectorCollection, output: Vector<'_, Unknown>) -> Result<()>
 fn offset_inet(
     args: &VectorCollection,
     output: Vector<'_, Unknown>,
-    f: fn(IpAddress, i128) -> std::result::Result<IpAddress, OffsetError>,
+    f: impl Fn(IpAddress, i128) -> std::result::Result<IpAddress, OffsetError>,
 ) -> Result<()> {
     rows::write_values(
         output.cast()?,

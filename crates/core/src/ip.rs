@@ -125,10 +125,11 @@ impl IpAddress {
         self.with_address(self.network().address | host_bits)
     }
 
-    /// Whether every address of this network lies within `other`.
+    /// Whether every address of this network lies within `other`, which has the same family.
     #[must_use]
     pub fn is_subnet_of(self, other: Self) -> bool {
-        other.network().address <= self.network().address
+        self.family == other.family
+            && other.network().address <= self.network().address
             && self.broadcast().address <= other.broadcast().address
     }
 
@@ -254,6 +255,13 @@ fn parse_ipv4(text: &[u8]) -> Result<IpAddress, ParseError> {
 const IPV6_GROUPS: usize = 8;
 
 fn parse_ipv6(text: &[u8]) -> Result<IpAddress, ParseError> {
+    let groups_text = text.split(|byte| *byte == b'/').next().unwrap_or_default();
+    let stray_colon = (groups_text.starts_with(b":") && !groups_text.starts_with(b"::"))
+        || (groups_text.ends_with(b":") && !groups_text.ends_with(b"::"));
+    if stray_colon {
+        return Err(ParseError("Expected 8 sets of 4 hex digits."));
+    }
+
     let mut groups = [0u16; IPV6_GROUPS];
     let mut count = 0;
     // The number of groups parsed before `::`.
@@ -509,6 +517,19 @@ mod tests {
             "Expected 8 sets of 4 hex digits."
         );
         assert_eq!(parse_error(":2:"), "Expected 8 sets of 4 hex digits.");
+        for text in [
+            ":1::2",
+            "1::2:",
+            ":1:2:3:4:5:6:7:8",
+            "1:2:3:4:5:6:7:8:",
+            "::1:/64",
+        ] {
+            assert_eq!(
+                parse_error(text),
+                "Expected 8 sets of 4 hex digits.",
+                "{text}"
+            );
+        }
         assert_eq!(
             parse_error("2001:db8::cef3::363/96"),
             "Encountered more than one double-colon"
@@ -598,6 +619,8 @@ mod tests {
         assert!(!parse("127.0.0.1/8").is_subnet_of(parse("127.0.0.1")));
         assert!(parse("2001:db8:0:1::/64").is_subnet_of(parse("2001:db8::/32")));
         assert!(!parse("2001:db8::/16").is_subnet_of(parse("2001:db8::/32")));
+        assert!(!parse("0.0.0.1").is_subnet_of(parse("::/0")));
+        assert!(!parse("::1").is_subnet_of(parse("0.0.0.0/0")));
     }
 
     #[test]

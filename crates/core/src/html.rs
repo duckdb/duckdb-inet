@@ -27,8 +27,9 @@ pub struct Escape<'a> {
     quote: bool,
 }
 
-impl fmt::Display for Escape<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Escape<'_> {
+    /// Write the escaped text to `out`; for a `String` this avoids `Display`'s dynamic dispatch.
+    pub fn write_to(&self, f: &mut impl Write) -> fmt::Result {
         let mut unescaped = 0;
         for (index, byte) in self.text.bytes().enumerate() {
             let replacement = match byte {
@@ -47,12 +48,19 @@ impl fmt::Display for Escape<'_> {
     }
 }
 
+impl fmt::Display for Escape<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.write_to(f)
+    }
+}
+
 /// Displays its text with character references decoded; see [`unescape`].
 #[derive(Clone, Copy, Debug)]
 pub struct Unescape<'a>(&'a str);
 
-impl fmt::Display for Unescape<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Unescape<'_> {
+    /// Write the decoded text to `out`; for a `String` this avoids `Display`'s dynamic dispatch.
+    pub fn write_to(&self, f: &mut impl Write) -> fmt::Result {
         let mut rest = self.0;
         while let Some(ampersand) = rest.find('&') {
             f.write_str(&rest[..ampersand])?;
@@ -69,6 +77,12 @@ impl fmt::Display for Unescape<'_> {
             };
         }
         f.write_str(rest)
+    }
+}
+
+impl fmt::Display for Unescape<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.write_to(f)
     }
 }
 

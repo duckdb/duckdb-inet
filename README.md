@@ -17,8 +17,8 @@ SELECT html_escape('<b>"duck"</b>'), html_unescape('I&hearts;DuckDB');
 | `network(inet)` | The first address of the network |
 | `broadcast(inet)` | The last address of the network |
 | `inet + hugeint`, `inet - hugeint` | Offset the address, keeping the prefix |
-| `a <<= b`, `subnet_contained_by_or_equals(a, b)` | Whether network `a` lies within `b` |
-| `a >>= b`, `subnet_contains_or_equals(a, b)` | Whether network `a` contains `b` |
+| `a <<= b`, `subnet_contained_by_or_equals(a, b)` | Whether network `a` lies within `b` (false across families) |
+| `a >>= b`, `subnet_contains_or_equals(a, b)` | Whether network `a` contains `b` (false across families) |
 | `html_escape(text, quote := true)` | Escape `&`, `<`, `>`, and quotes unless `quote` is false |
 | `html_unescape(text)` | Decode HTML character references |
 
@@ -52,5 +52,5 @@ duckdb -unsigned -cmd "LOAD '$PWD/build/release/inet.duckdb_extension';"
 
 ```shell
 cargo test --workspace   # unit tests
-make test_release        # SQL logic tests in test/sql, or make test_debug
+make test_release        # SQL logic tests in test/sql and test/test_extension.py, or make test_debug
 ```
