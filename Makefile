@@ -31,14 +31,19 @@ configure: venv platform extension_version
 debug: build_extension_library_debug build_extension_with_metadata_debug
 release: build_extension_library_release build_extension_with_metadata_release
 
+ifeq ($(OS),Windows_NT)
+# Let cc-rs discover MSVC when tests run outside a developer shell.
+INTEGRATION_TEST_ENV=env -u CC -u CXX
+endif
+
 test: test_debug
 test_debug: test_extension_debug
 ifneq ($(SKIP_TESTS),1)
-	cd test/integration && INET_EXTENSION=$(PROJ_DIR)build/debug/$(EXTENSION_FILENAME) cargo test
+	cd test/integration && INET_EXTENSION=$(PROJ_DIR)build/debug/$(EXTENSION_FILENAME) $(INTEGRATION_TEST_ENV) cargo test
 endif
 test_release: test_extension_release
 ifneq ($(SKIP_TESTS),1)
-	cd test/integration && INET_EXTENSION=$(PROJ_DIR)build/release/$(EXTENSION_FILENAME) cargo test
+	cd test/integration && INET_EXTENSION=$(PROJ_DIR)build/release/$(EXTENSION_FILENAME) $(INTEGRATION_TEST_ENV) cargo test
 endif
 
 clean: clean_build clean_rust
