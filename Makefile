@@ -2,32 +2,49 @@
 
 PROJ_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
-# Main extension configuration
 EXTENSION_NAME=inet
 
-# Set to 1 to enable Unstable API (binaries will only work on TARGET_DUCKDB_VERSION, forwards compatibility will be broken)
-# WARNING: When set to 1, the duckdb_extension.h from the TARGET_DUCKDB_VERSION must be used, using any other version of
-#          the header is unsafe.
-USE_UNSTABLE_C_API=0
+# Mark the extension as C_STRUCT_UNSTABLE: DuckDB 2.x requires the _init_c_api_v2 entrypoint.
+# Binaries load only in the exact TARGET_DUCKDB_VERSION, not in newer DuckDB releases.
+USE_UNSTABLE_C_API=1
+CAPI_VERSION=2
 
-# The DuckDB version to target
-TARGET_DUCKDB_VERSION=v1.5.6
-DUCKDB_TEST_VERSION=2.0.0.dev2610011535
+# Target DuckDB version
+TARGET_DUCKDB_VERSION=v2.0.0
 
-all: configure release
+all: configure debug
 
 # Include makefiles from DuckDB
 include extension-ci-tools/makefiles/c_api_extensions/base.Makefile
-include extension-ci-tools/makefiles/c_api_extensions/c_cpp.Makefile
+include extension-ci-tools/makefiles/c_api_extensions/rust.Makefile
+
+# Build workspace libraries rather than the CI tools' Wasm example target.
+IS_EXAMPLE=
+ifneq ($(DUCKDB_WASM_PLATFORM),)
+	TARGET_INFO=--target $(TARGET) --package inet_wasm
+else
+	TARGET_INFO+=--package inet
+endif
 
 configure: venv platform extension_version
 
 debug: build_extension_library_debug build_extension_with_metadata_debug
 release: build_extension_library_release build_extension_with_metadata_release
 
+ifeq ($(OS),Windows_NT)
+# Let cc-rs discover MSVC when tests run outside a developer shell.
+INTEGRATION_TEST_ENV=env -u CC -u CXX
+endif
+
 test: test_debug
 test_debug: test_extension_debug
+ifneq ($(SKIP_TESTS),1)
+	cd test/integration && INET_EXTENSION=$(PROJ_DIR)build/debug/$(EXTENSION_FILENAME) $(INTEGRATION_TEST_ENV) cargo test
+endif
 test_release: test_extension_release
+ifneq ($(SKIP_TESTS),1)
+	cd test/integration && INET_EXTENSION=$(PROJ_DIR)build/release/$(EXTENSION_FILENAME) $(INTEGRATION_TEST_ENV) cargo test
+endif
 
-clean: clean_build clean_cmake
-clean_all: clean clean_configure
+clean: clean_build clean_rust
+clean_all: clean_configure clean

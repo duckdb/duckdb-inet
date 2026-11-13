@@ -40,57 +40,57 @@ INET
 statement error
 select '127'::inet;
 ----
-^
+Conversion Error: Expected an IP address
 
 statement error
 select '127..1'::inet;
 ----
-^
+Conversion Error: Expected a number
 
 statement error
 SELECT '256.0.0.1'::INET::VARCHAR
 ----
-^
+Conversion Error: Expected a number between 0 and 255
 
 statement error
 SELECT '-1.0.0.1'::INET::VARCHAR
 ----
-^
+Conversion Error: Expected a number
 
 statement error
 SELECT '127..0.1'::INET::VARCHAR
 ----
-^
+Conversion Error: Expected a number
 
 statement error
 SELECT '127.0.0.1/33'::INET::VARCHAR
 ----
-^
+Conversion Error: Expected a number between 0 and 32
 
 statement error
 SELECT '127.0.0.1/333'::INET::VARCHAR
 ----
-^
+Conversion Error: Expected a number between 0 and 32
 
 statement error
 SELECT '127.0.0.1/33333333333333333333'::INET::VARCHAR
 ----
-^
+Conversion Error: Expected a number between 0 and 32
 
 statement error
 SELECT '3,786'::INET;
 ----
-^
+Conversion Error: Expected an IP address
 
 statement error
 SELECT '1.2.3.4#34'::INET
 ----
-^
+Conversion Error: Expected a slash
 
 statement error
 SELECT '999.999.999.999/24'::INET
 ----
-^
+Conversion Error: Expected a number between 0 and 255
 
 statement ok
 CREATE TABLE inet(ip VARCHAR);
@@ -105,3 +105,25 @@ SELECT TRY_CAST(ip AS INET) FROM inet;
 NULL
 NULL
 255.255.255.255/31
+
+# trailing characters after the prefix are rejected
+statement error
+SELECT '1.2.3.4/24abc'::INET
+----
+Conversion Error: Unexpected extra characters
+
+statement error
+SELECT '127.0.0.1/4294967320'::INET
+----
+Conversion Error: Expected a number between 0 and 32
+
+# values cast from a STRUCT are validated
+statement error
+SELECT host({'ip_type': 3, 'address': 0, 'mask': 0}::INET)
+----
+Invalid Input Error: Invalid IP address type
+
+statement error
+SELECT host({'ip_type': 1, 'address': 0, 'mask': 33}::INET)
+----
+Invalid Input Error: Invalid INET value

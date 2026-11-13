@@ -1,0 +1,150 @@
+# name: test/sql/inet/test_struct_batches.test
+# description: Batched INET child-vector selection, validity and validation
+# group: [inet]
+
+require inet
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+CREATE TABLE inputs AS SELECT i, CASE
+    WHEN i < 2048 OR i%5=0 THEN NULL
+    WHEN i%2=0 THEN '192.168.1.42/24'
+    ELSE '2001:db8::42/64' END AS text FROM range(7000) t(i)
+
+statement ok
+CREATE TABLE outputs AS SELECT i, ip, network(ip) AS nw, netmask(ip) AS nm,
+    broadcast(ip) AS bc, ip+1 AS next, ip-1 AS prev
+FROM (SELECT i, text::INET AS ip FROM inputs)
+
+statement ok
+CREATE MACRO raw_fields(x) AS x::STRUCT(ip_type UTINYINT, address HUGEINT, mask USMALLINT)
+
+# Field extraction must not expose stale values underneath a NULL parent.
+query I
+SELECT count(*) FROM outputs JOIN inputs USING (i) WHERE text IS NULL AND (
+    raw_fields(ip).ip_type IS NOT NULL OR raw_fields(ip).address IS NOT NULL OR raw_fields(ip).mask IS NOT NULL OR
+    raw_fields(nw).ip_type IS NOT NULL OR raw_fields(nw).address IS NOT NULL OR raw_fields(nw).mask IS NOT NULL OR
+    raw_fields(nm).ip_type IS NOT NULL OR raw_fields(nm).address IS NOT NULL OR raw_fields(nm).mask IS NOT NULL OR
+    raw_fields(bc).ip_type IS NOT NULL OR raw_fields(bc).address IS NOT NULL OR raw_fields(bc).mask IS NOT NULL OR
+    raw_fields(next).ip_type IS NOT NULL OR raw_fields(next).address IS NOT NULL OR raw_fields(next).mask IS NOT NULL OR
+    raw_fields(prev).ip_type IS NOT NULL OR raw_fields(prev).address IS NOT NULL OR raw_fields(prev).mask IS NOT NULL
+)
+----
+0
+
+# NULL parents must have NULL descendants even after reusing a batch's storage.
+query I
+SELECT count(*) FROM (
+    SELECT i, unnest([ip, nw, nm, bc, next, prev])::STRUCT(ip_type UTINYINT, address HUGEINT, mask USMALLINT) AS fields
+    FROM outputs
+) o JOIN inputs USING (i)
+WHERE text IS NULL AND (fields IS NOT NULL OR fields.ip_type IS NOT NULL OR fields.address IS NOT NULL OR fields.mask IS NOT NULL)
+----
+0
+
+query I
+SELECT count(*) FROM outputs JOIN inputs USING (i)
+WHERE text IS NOT NULL AND (nw IS NULL OR nm IS NULL OR bc IS NULL OR next IS NULL OR prev IS NULL)
+----
+0
+
+query ITTTTT
+SELECT i, nw::VARCHAR, nm::VARCHAR, bc::VARCHAR, next::VARCHAR, prev::VARCHAR
+FROM outputs WHERE i IN (2047,2048,2049,2050) ORDER BY i
+----
+2047	NULL	NULL	NULL	NULL	NULL
+2048	192.168.1.0/24	255.255.255.0/24	192.168.1.255/24	192.168.1.43/24	192.168.1.41/24
+2049	2001:db8::/64	ffff:ffff:ffff:ffff::/64	2001:db8::ffff:ffff:ffff:ffff/64	2001:db8::43/64	2001:db8::41/64
+2050	NULL	NULL	NULL	NULL	NULL
+
+# Reorder and filter rows before invoking callbacks on the selected child vectors.
+query I
+WITH selected AS MATERIALIZED (SELECT * FROM outputs ORDER BY hash(i))
+SELECT count(*) FROM selected WHERE i%3=1 AND (
+    host(ip) IS DISTINCT FROM CASE WHEN ip IS NULL THEN NULL WHEN i%2=0 THEN '192.168.1.42' ELSE '2001:db8::42' END
+    OR family(ip) IS DISTINCT FROM CASE WHEN ip IS NULL THEN NULL WHEN i%2=0 THEN 4 ELSE 6 END
+    OR (ip <<= nw) IS DISTINCT FROM CASE WHEN ip IS NULL THEN NULL ELSE true END
+    OR (ip + 1) IS DISTINCT FROM next
+    OR network(ip) IS DISTINCT FROM nw
+)
+----
+0
+
+# A constant INET operand still has to follow the other operand's logical rows.
+query I
+SELECT count(*) FROM (
+    SELECT i, (INET '::1' + i::HUGEINT)::STRUCT(ip_type UTINYINT, address HUGEINT, mask USMALLINT) AS fields
+    FROM range(6000) t(i)
+) WHERE fields.address != '-170141183460469231731687303715884105727'::HUGEINT + i
+    OR fields.mask != 128 OR fields.ip_type != 2
+----
+0
+
+query I
+SELECT count(*) FROM outputs WHERE
+    (INET '::/0' >>= ip) IS DISTINCT FROM CASE WHEN ip IS NULL THEN NULL ELSE i%2=1 END
+----
+0
+
+# TRY_CAST must fill later rows and all descendants after a failed conversion.
+query I
+WITH parsed AS MATERIALIZED (
+    SELECT i, TRY_CAST(CASE WHEN i%3=0 THEN 'invalid' WHEN i%3=1 THEN NULL ELSE '::1' END AS INET) AS ip
+    FROM range(7000) t(i)
+)
+SELECT count(*) FROM parsed WHERE ip::VARCHAR IS DISTINCT FROM CASE WHEN i%3=2 THEN '::1' ELSE NULL END
+    OR (ip::STRUCT(ip_type UTINYINT, address HUGEINT, mask USMALLINT)).address
+       IS DISTINCT FROM CASE WHEN i%3=2 THEN '-170141183460469231731687303715884105727'::HUGEINT ELSE NULL END
+----
+0
+
+statement ok
+CREATE TABLE malformed AS SELECT
+    {'ip_type': 1::UTINYINT, 'address': -1::HUGEINT, 'mask': 32::USMALLINT}::INET AS ip,
+    NULL::INET AS other, NULL::HUGEINT AS delta
+
+# Binary NULL propagation precedes validation of a malformed non-NULL operand.
+query IIII
+SELECT ip <<= other, other >>= ip, ip+delta, ip-delta FROM malformed
+----
+NULL	NULL	NULL	NULL
+
+statement ok
+CREATE TABLE mixed_pairs AS SELECT i,
+    CASE WHEN i%2=0 THEN {'ip_type':1::UTINYINT, 'address':-1::HUGEINT, 'mask':32::USMALLINT}::INET
+         ELSE INET '127.0.0.1' END AS ip,
+    CASE WHEN i%2=0 THEN NULL::INET ELSE INET '0.0.0.0/0' END AS other,
+    CASE WHEN i%2=0 THEN NULL::HUGEINT ELSE 1::HUGEINT END AS delta
+FROM range(5000) t(i)
+
+query III
+SELECT count(ip <<= other), count(other >>= ip), count(ip+delta) FROM mixed_pairs
+----
+2500	2500	2500
+
+statement error
+SELECT family(ip) FROM malformed
+----
+Invalid Input Error: Invalid INET value
+
+statement error
+SELECT ip <<= INET '0.0.0.0/0' FROM malformed
+----
+Invalid Input Error: Invalid INET value
+
+statement error
+SELECT network({'ip_type':1::UTINYINT, 'address':1::HUGEINT, 'mask':NULL::USMALLINT}::INET)
+----
+Invalid Input Error: Invalid INET value
+
+statement error
+SELECT netmask({'ip_type':2::UTINYINT, 'address':0::HUGEINT, 'mask':129::USMALLINT}::INET)
+----
+Invalid Input Error: Invalid INET value
+
+statement error
+SELECT broadcast({'ip_type':3::UTINYINT, 'address':0::HUGEINT, 'mask':0::USMALLINT}::INET)
+----
+Invalid Input Error: Invalid IP address type
