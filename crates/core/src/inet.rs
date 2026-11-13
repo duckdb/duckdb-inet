@@ -9,7 +9,7 @@ use duckdb_neo::{
     extension::Extension,
     logical_type::LogicalType,
     types::HugeInt,
-    vector::Vector,
+    vector::{RowReader, Vector},
 };
 
 use crate::ip::{Family, IpAddress, OffsetError, ParseError};
@@ -26,6 +26,7 @@ const IPV6_SORT_BIT: u128 = 1 << 127;
 ///
 /// Struct comparison orders values by family, then address, then prefix length.
 #[derive(Debug, AsDuckDB)]
+#[duckdb(reader, writer)]
 pub(crate) struct InetStorage {
     ip_type: u8,
     address: HugeInt,
@@ -54,10 +55,10 @@ impl From<IpAddress> for InetStorage {
     }
 }
 
-impl TryFrom<InetStorageRef<'_>> for IpAddress {
+impl TryFrom<InetStorageRef<&u8, &HugeInt, &u16>> for IpAddress {
     type Error = Error;
 
-    fn try_from(inet: InetStorageRef<'_>) -> Result<Self> {
+    fn try_from(inet: InetStorageRef<&u8, &HugeInt, &u16>) -> Result<Self> {
         let (family, sort_bit) = match inet.ip_type {
             Some(&IPV4) => (Family::V4, 0),
             Some(&IPV6) => (Family::V6, IPV6_SORT_BIT),
@@ -114,7 +115,7 @@ impl CastFunctionCallbacks for ParseInet {
         input: Vector<'_, String>,
         output: Vector<'_, InetStorage>,
     ) -> Result<()> {
-        let input = input.reader()?;
+        let input = input.row_reader()?;
         rows::write_values(output, input.iter(), |text| {
             try_row(
                 mode,
@@ -139,7 +140,7 @@ impl CastFunctionCallbacks for FormatInet {
         input: Vector<'_, InetStorage>,
         output: Vector<'_, String>,
     ) -> Result<()> {
-        let input = input.reader()?;
+        let input = input.row_reader()?;
         rows::write_text(output, input.iter(), |inet| {
             try_row(mode, IpAddress::try_from(inet))
         })

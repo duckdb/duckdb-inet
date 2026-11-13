@@ -9,13 +9,13 @@ use duckdb_neo::{
     scalar::{ScalarCallbacks, ScalarFunctionBuilder},
     signature::{FunctionDocumentationBuilder, FunctionParameter, SignatureBuilder},
     types::HugeInt,
-    vector::{Unknown, Vector},
+    vector::{RowReader, Unknown, Vector},
 };
 
 use crate::html;
 use crate::inet::{self, InetStorage};
 use crate::ip::{IpAddress, OffsetError};
-use crate::rows::{self, binary, unary};
+use crate::rows::{self, binary, unary, zip};
 
 type Exec = fn(&VectorCollection, Vector<'_, Unknown>) -> Result<()>;
 
@@ -28,9 +28,9 @@ impl ScalarCallbacks for Scalar {
 
     fn exec(
         &self,
+        _context: &Context,
         _bind_data: Option<&()>,
         _init_data: Option<&mut ()>,
-        _context: &Context,
         args: &mut VectorCollection,
         output: Vector<'_, Unknown>,
     ) -> Result<()> {
@@ -39,13 +39,15 @@ impl ScalarCallbacks for Scalar {
 }
 
 fn host(args: &VectorCollection, output: Vector<'_, Unknown>) -> Result<()> {
-    rows::write_text(output.cast()?, unary::<InetStorage>(args)?, |inet| {
+    let input = unary::<InetStorage>(args)?;
+    rows::write_text(output.cast()?, input.iter(), |inet| {
         Ok(Some(IpAddress::try_from(inet)?.host()))
     })
 }
 
 fn family(args: &VectorCollection, output: Vector<'_, Unknown>) -> Result<()> {
-    rows::write_values(output.cast()?, unary::<InetStorage>(args)?, |inet| {
+    let input = unary::<InetStorage>(args)?;
+    rows::write_values(output.cast()?, input.iter(), |inet| {
         Ok(Some(IpAddress::try_from(inet)?.family().version()))
     })
 }
@@ -55,7 +57,8 @@ fn map_inet(
     output: Vector<'_, Unknown>,
     f: impl Fn(IpAddress) -> IpAddress,
 ) -> Result<()> {
-    rows::write_values(output.cast()?, unary::<InetStorage>(args)?, |inet| {
+    let input = unary::<InetStorage>(args)?;
+    rows::write_values(output.cast()?, input.iter(), |inet| {
         Ok(Some(InetStorage::from(f(IpAddress::try_from(inet)?))))
     })
 }
@@ -77,17 +80,14 @@ fn offset_inet(
     output: Vector<'_, Unknown>,
     f: impl Fn(IpAddress, i128) -> std::result::Result<IpAddress, OffsetError>,
 ) -> Result<()> {
-    rows::write_values(
-        output.cast()?,
-        binary::<InetStorage, HugeInt>(args)?,
-        |(inet, offset)| {
-            let offset = i128::from(offset.upper) << 64 | i128::from(offset.lower);
-            Ok(Some(InetStorage::from(f(
-                IpAddress::try_from(inet)?,
-                offset,
-            )?)))
-        },
-    )
+    let input = binary::<InetStorage, HugeInt>(args)?;
+    rows::write_values(output.cast()?, zip(&input), |(inet, offset)| {
+        let offset = i128::from(offset.upper) << 64 | i128::from(offset.lower);
+        Ok(Some(InetStorage::from(f(
+            IpAddress::try_from(inet)?,
+            offset,
+        )?)))
+    })
 }
 
 fn add(args: &VectorCollection, output: Vector<'_, Unknown>) -> Result<()> {
@@ -99,39 +99,33 @@ fn subtract(args: &VectorCollection, output: Vector<'_, Unknown>) -> Result<()> 
 }
 
 fn contained_by(args: &VectorCollection, output: Vector<'_, Unknown>) -> Result<()> {
-    rows::write_values(
-        output.cast()?,
-        binary::<InetStorage, InetStorage>(args)?,
-        |(inet, network)| {
-            Ok(Some(
-                IpAddress::try_from(inet)?.is_subnet_of(IpAddress::try_from(network)?),
-            ))
-        },
-    )
+    let input = binary::<InetStorage, InetStorage>(args)?;
+    rows::write_values(output.cast()?, zip(&input), |(inet, network)| {
+        Ok(Some(
+            IpAddress::try_from(inet)?.is_subnet_of(IpAddress::try_from(network)?),
+        ))
+    })
 }
 
 fn contains(args: &VectorCollection, output: Vector<'_, Unknown>) -> Result<()> {
-    rows::write_values(
-        output.cast()?,
-        binary::<InetStorage, InetStorage>(args)?,
-        |(network, inet)| {
-            Ok(Some(
-                IpAddress::try_from(inet)?.is_subnet_of(IpAddress::try_from(network)?),
-            ))
-        },
-    )
+    let input = binary::<InetStorage, InetStorage>(args)?;
+    rows::write_values(output.cast()?, zip(&input), |(network, inet)| {
+        Ok(Some(
+            IpAddress::try_from(inet)?.is_subnet_of(IpAddress::try_from(network)?),
+        ))
+    })
 }
 
 fn html_escape(args: &VectorCollection, output: Vector<'_, Unknown>) -> Result<()> {
-    rows::write_text(
-        output.cast()?,
-        binary::<String, bool>(args)?,
-        |(text, quote)| Ok(Some(html::escape(text, *quote))),
-    )
+    let input = binary::<String, bool>(args)?;
+    rows::write_text(output.cast()?, zip(&input), |(text, quote)| {
+        Ok(Some(html::escape(text, *quote)))
+    })
 }
 
 fn html_unescape(args: &VectorCollection, output: Vector<'_, Unknown>) -> Result<()> {
-    rows::write_text(output.cast()?, unary::<String>(args)?, |text| {
+    let input = unary::<String>(args)?;
+    rows::write_text(output.cast()?, input.iter(), |text| {
         Ok(Some(html::unescape(text)))
     })
 }

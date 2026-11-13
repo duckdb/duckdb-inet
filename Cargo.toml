@@ -9,7 +9,7 @@ edition = "2024"
 license = "MIT"
 
 [workspace.dependencies]
-duckdb-neo = { version = "=0.20000.1", features = ["build-extension"] }
+duckdb-neo = { version = "=0.20000.2", features = ["build-extension"] }
 inet_core = { path = "crates/core" }
 
 [profile.release]

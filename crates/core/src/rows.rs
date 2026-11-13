@@ -5,7 +5,7 @@ use std::fmt::{self, Write};
 use duckdb_neo::{
     Error, Result,
     data_chunk::VectorCollection,
-    vector::{CombinedVectorIterator, Vector, VectorElement, WritableVectorElement},
+    vector::{RowReader, RowWriter, Vector, WithReader, WithWriter},
 };
 
 use crate::html::{Escape, Unescape};
@@ -34,20 +34,28 @@ impl Render for Unescape<'_> {
     }
 }
 
-/// The rows of the first argument.
-pub(crate) fn unary<'a, A: VectorElement + 'a>(
-    args: &'a VectorCollection,
-) -> Result<impl ExactSizeIterator<Item = Option<A::Ref<'a>>>> {
-    Ok(args.get_vector_at::<A>(0)?.reader()?.iter())
+/// The row reader of the first argument.
+pub(crate) fn unary<'a, A: WithReader + 'a>(args: &'a VectorCollection) -> Result<A::Reader<'a>> {
+    args.get_vector_at::<A>(0)?.row_reader()
 }
 
-/// The rows of the first two arguments, `None` where either is NULL.
-pub(crate) fn binary<'a, A: VectorElement + 'a, B: VectorElement + 'a>(
+/// The row readers of the first two arguments.
+pub(crate) fn binary<'a, A: WithReader + 'a, B: WithReader + 'a>(
     args: &'a VectorCollection,
-) -> Result<impl ExactSizeIterator<Item = Option<(A::Ref<'a>, B::Ref<'a>)>>> {
-    let a = args.get_vector_at::<A>(0)?.reader()?;
-    let b = args.get_vector_at::<B>(1)?.reader()?;
-    Ok(CombinedVectorIterator::new((a, b))?.map(|(a, b)| a.zip(b)))
+) -> Result<(A::Reader<'a>, B::Reader<'a>)> {
+    let a = args.get_vector_at::<A>(0)?.row_reader()?;
+    let b = args.get_vector_at::<B>(1)?.row_reader()?;
+    if a.len() != b.len() {
+        return Err(Error::invalid_input("argument vectors differ in length"));
+    }
+    Ok((a, b))
+}
+
+/// The rows of two readers, `None` where either is NULL.
+pub(crate) fn zip<'r, A: RowReader, B: RowReader>(
+    (a, b): &'r (A, B),
+) -> impl ExactSizeIterator<Item = Option<(A::Item<'r>, B::Item<'r>)>> {
+    a.iter().zip(b.iter()).map(|(a, b)| a.zip(b))
 }
 
 /// Write `f` of every non-NULL row; `f` returns `None` for a NULL result.
@@ -57,16 +65,17 @@ pub(crate) fn write_values<In, T>(
     mut f: impl FnMut(In) -> Result<Option<T>>,
 ) -> Result<()>
 where
-    T: for<'a> WritableVectorElement<Write<'a> = T>,
+    T: WithWriter,
+    for<'w> T::Writer<'w>: RowWriter<Value = T>,
 {
     output.set_size(rows.len())?;
-    let mut writer = output.writer()?;
+    let mut writer = output.row_writer()?;
     for (row, input) in rows.enumerate() {
         let value = match input {
             Some(input) => f(input)?,
             None => None,
         };
-        writer.set(row, value)?;
+        writer.set_option(row, value.as_ref())?;
     }
     Ok(())
 }
@@ -91,9 +100,9 @@ pub(crate) fn write_text<In, D: Render>(
                 value
                     .render(&mut text)
                     .map_err(|_| Error::api_error("failed to format a value"))?;
-                writer.set(row, Some(&text))?;
+                writer.set(row, &text)?;
             }
-            None => writer.set(row, None)?,
+            None => writer.set_null(row)?,
         }
     }
     Ok(())

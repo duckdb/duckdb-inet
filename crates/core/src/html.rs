@@ -106,6 +106,7 @@ fn numeric_reference(reference: &str) -> Option<(u32, usize)> {
 }
 
 /// Look up a reference like `amp;`, or else the longest legacy name that prefixes it, like `amp` in `ampx`.
+#[inline(always)]
 fn named_reference(reference: &str) -> Option<(&'static str, usize)> {
     let len = reference
         .find(|c: char| !c.is_ascii_alphanumeric())

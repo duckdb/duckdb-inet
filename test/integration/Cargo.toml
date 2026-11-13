@@ -9,6 +9,6 @@ publish = false
 [workspace]
 
 [dev-dependencies]
-duckdb-neo = "=0.20000.1"
+duckdb-neo = "=0.20000.2"
 ipnet = "2"
 tempfile = "3"
