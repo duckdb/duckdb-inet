@@ -4,3 +4,6 @@
 [submodule "duckdb-cpp-api"]
 	path = duckdb-cpp-api
 	url = https://github.com/duckdb/duckdb-cpp-api
+[submodule "duckdb"]
+	path = duckdb
+	url = https://github.com/duckdb/duckdb.git
