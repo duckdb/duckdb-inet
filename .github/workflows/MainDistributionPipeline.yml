@@ -16,7 +16,7 @@ jobs:
     name: Build extension binaries
     uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@2e5d22fa1b1c42e6fc7aa84a8e66a15e6b492b30
     with:
-      duckdb_version: v2.0.0
+      duckdb_version: v2.0.1
       ci_tools_version: 2e5d22fa1b1c42e6fc7aa84a8e66a15e6b492b30
       extension_name: inet
       extra_toolchains: rust;python3

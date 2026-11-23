@@ -50,6 +50,23 @@ The extension is written to `build/release/inet.duckdb_extension`. It is built a
 duckdb -unsigned -cmd "LOAD '$PWD/build/release/inet.duckdb_extension';"
 ```
 
+## Benchmarking
+
+To compare two release-built extensions:
+
+```shell
+configure/venv/bin/python3 scripts/benchmark_neo.py \
+    --baseline target/baseline/release/inet.duckdb_extension \
+    --candidate build/release/inet.duckdb_extension \
+    --output target/benchmark-neo.json
+```
+
+The reference baseline was built from `inet-rust` at `3fa829c` with the same release
+profile (LTO enabled), using the published bindings. The script alternates isolated processes over
+seven rounds, checks matching query results, and reports medians and min/max on one million rows.
+Each query runs once to warm up before timing; data setup is excluded and DuckDB uses one thread.
+Do not run builds or tests alongside it.
+
 ## Testing
 
 ```shell
