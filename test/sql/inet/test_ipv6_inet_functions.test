@@ -134,3 +134,9 @@ SELECT * FROM (VALUES (netmask('2001:db8:3c4d::/48')), (broadcast('2001:db8:3c4d
 ffff:ffff:ffff::/48
 2001:db8:3c4d:ffff:ffff:ffff:ffff:ffff/48
 2001:db8::/32
+
+# offsets of the full HUGEINT range
+query II
+SELECT INET '::' - (-170141183460469231731687303715884105728)::HUGEINT, INET '8000::' + (-170141183460469231731687303715884105728)::HUGEINT;
+----
+8000::	::

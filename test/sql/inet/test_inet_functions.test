@@ -143,3 +143,14 @@ SELECT * FROM (VALUES (netmask('10.10.10.1/12')), (broadcast('10.10.10.2/8')), (
 255.240.0.0/12
 10.255.255.255/8
 10.10.10.3
+
+# offsets beyond the lower 64 bits cannot fit an IPv4 address
+statement error
+SELECT INET '0.0.0.0' + 18446744073709551616;
+----
+Out of Range Error: Cannot add 18446744073709551616
+
+query I
+SELECT INET '0.0.0.0' - -4294967295;
+----
+255.255.255.255

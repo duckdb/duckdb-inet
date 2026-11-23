@@ -189,3 +189,14 @@ statement error
 SELECT 'a:b:c:d:e:f:a:1.2.3.4'::INET;
 ----
 IPv4 format can only be used for the final 2 quibbles
+
+# IPv4 notation in the final 2 quibbles, followed by a prefix
+query I
+SELECT '1:2:3:4:5:6:1.2.3.4/64'::INET;
+----
+1:2:3:4:5:6:102:304/64
+
+statement error
+SELECT '1:2:3:4:5:6:7:8::'::INET;
+----
+Invalid double-colon, too many hex digits.

@@ -1,0 +1,151 @@
+# name: test/sql/inet/test_neo_regressions.test
+# description: Parsing, overflow, vector and HTML regressions
+# group: [inet]
+
+require inet
+
+statement ok
+PRAGMA enable_verification
+
+query I
+SELECT count(TRY_CAST(ip AS INET)) FROM (VALUES
+    ('1.2.3.4/24junk'), ('1.2.3.4/24/8'), ('4294967297.2.3.4'),
+    ('1.2.3.4/4294967320'), ('::1/4294967424'), (':1:2:3:4:5:6:7:8'),
+    ('1:2:3:4:5:6:7:8:'), ('1:2:3:4:5:6:7:8::'), (':1::2'), ('1::2:'),
+    ('a:b:c:d:e:f:a:1.2.3.4'), ('::1/128x'), ('::1%eth0'), ('[::1]')
+) t(ip)
+----
+0
+
+query T
+SELECT '1:2:3:4:5:6:192.0.2.1/96'::INET::VARCHAR
+----
+1:2:3:4:5:6:c000:201/96
+
+query TT
+SELECT (repeat('0', 100) || '1.2.3.4')::INET::VARCHAR, '::ffff:192.000.002.128'::INET::VARCHAR
+----
+1.2.3.4	::ffff:192.0.2.128
+
+statement error
+SELECT INET '0.0.0.1' + 18446744073709551616::HUGEINT
+----
+Out of Range Error: Cannot add
+
+statement error
+SELECT INET '255.255.255.255' - (-18446744073709551616::HUGEINT)
+----
+Out of Range Error: Cannot add 18446744073709551616
+
+query TT
+SELECT (INET '8000::' + '-170141183460469231731687303715884105728'::HUGEINT)::VARCHAR,
+       (INET '::' - '-170141183460469231731687303715884105728'::HUGEINT)::VARCHAR
+----
+::	8000::
+
+query TT
+SELECT (INET '::1:0:0:0:0/64' - 1)::VARCHAR, (INET '::ffff:ffff:ffff:ffff/64' + 1)::VARCHAR
+----
+::ffff:ffff:ffff:ffff/64	0:0:0:1::/64
+
+query IIII
+SELECT INET '0.0.0.1' <<= INET '::/0', INET '::1' <<= INET '0.0.0.0/0',
+       subnet_contains_or_equals(INET '::/0', INET '0.0.0.1'),
+       subnet_contained_by_or_equals(INET '::1', INET '0.0.0.0/0')
+----
+false	false	false	false
+
+query IIII
+SELECT INET '2001:db8:1234::1/64' <<= INET '2001:db8::/32',
+       INET '2001:db8::/32' >>= INET '2001:db8:1234::1/64',
+       INET '2001:db8::/32' <<= INET '2001:db8::/64',
+       INET '2002::1' <<= INET '2001:db8::/32'
+----
+true	true	false	false
+
+query TTTT
+SELECT html_unescape('é🦆中文 &amp;'), html_unescape('&notit;'),
+       html_unescape('&#999999999999999999999999999999999999999;'), html_unescape('&amp;lt;')
+----
+é🦆中文 &	&notit;	�	&lt;
+
+query III
+SELECT html_unescape(chr(0) || chr(13) || chr(129)) = chr(0) || chr(13) || chr(129),
+       html_unescape(html_escape('é🦆 <>&"''')) = 'é🦆 <>&"''',
+       html_escape('<x>', NULL) IS NULL
+----
+true	true	true
+
+query I
+SELECT count(*) FROM 'data/csv/html_unescape_codes.csv'
+WHERE html_unescape(code) IS DISTINCT FROM result
+----
+0
+
+statement ok
+CREATE TABLE mixed AS SELECT i, CASE i%4 WHEN 0 THEN '1.2.3.4/24' WHEN 1 THEN '::1/64'
+    WHEN 2 THEN 'invalid' ELSE NULL END AS text FROM range(10000) t(i)
+
+query III
+SELECT count(TRY_CAST(text AS INET)), count(host(TRY_CAST(text AS INET))),
+       count(network(TRY_CAST(text AS INET))) FROM mixed
+----
+5000	5000	5000
+
+query IIII
+SELECT i, host(TRY_CAST(text AS INET)), (TRY_CAST(text AS INET) + 1)::VARCHAR,
+       family(TRY_CAST(text AS INET)) FROM mixed WHERE i IN (4092, 4093, 4094, 4095) ORDER BY i
+----
+4092	1.2.3.4	1.2.3.5/24	4
+4093	::1	::2/64	6
+4094	NULL	NULL	NULL
+4095	NULL	NULL	NULL
+
+query I
+SELECT count(*) FROM mixed WHERE
+    (TRY_CAST(text AS INET) IS NULL) IS DISTINCT FROM (i%4 >= 2)
+----
+0
+
+query IIII
+SELECT host(NULL::INET), family(NULL::INET), NULL::INET + 1, INET '::1' + NULL::HUGEINT
+----
+NULL	NULL	NULL	NULL
+
+query IIIII
+SELECT netmask(NULL::INET), network(NULL::INET), broadcast(NULL::INET),
+       INET '::1' <<= NULL::INET, NULL::INET >>= INET '::1'
+----
+NULL	NULL	NULL	NULL	NULL
+
+query T
+SELECT {'ip_type':1::UTINYINT,'address':2130706433::HUGEINT,'mask':32::USMALLINT}::INET::VARCHAR
+----
+127.0.0.1
+
+statement error
+SELECT host({'ip_type':NULL::UTINYINT,'address':0::HUGEINT,'mask':32::USMALLINT}::INET)
+----
+Invalid Input Error: Invalid IP address type
+
+statement error
+SELECT {'ip_type':3::UTINYINT,'address':0::HUGEINT,'mask':0::USMALLINT}::INET::VARCHAR
+----
+Invalid Input Error: Invalid IP address type
+
+query III
+SELECT TRY_CAST({'ip_type':1::UTINYINT,'address':-1::HUGEINT,'mask':32::USMALLINT}::INET AS VARCHAR),
+       TRY_CAST({'ip_type':2::UTINYINT,'address':0::HUGEINT,'mask':129::USMALLINT}::INET AS VARCHAR),
+       TRY_CAST({'ip_type':NULL::UTINYINT,'address':0::HUGEINT,'mask':0::USMALLINT}::INET AS VARCHAR)
+----
+NULL	NULL	NULL
+
+query I
+SELECT (INET '255.255.255.255' < INET '::') AND (INET '7fff::' < INET '8000::')
+----
+true
+
+query T
+SELECT list_transform([INET '::1', NULL::INET, INET '1.2.3.4'], lambda x: host(x))
+----
+['::1', NULL, 1.2.3.4]

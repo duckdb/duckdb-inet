@@ -1,7 +1,3 @@
-import json
-import subprocess
-
-LOOKUP_TABLE_STR = """
 {
   "&AElig": { "codepoints": [198] },
   "&AElig;": { "codepoints": [198] },
@@ -2235,46 +2231,3 @@ LOOKUP_TABLE_STR = """
   "&zwj;": { "codepoints": [8205] },
   "&zwnj;": { "codepoints": [8204] }
 }
-"""
-
-GPERF_INPUT = """
-
-
-%{ 
-#include <stdint.h>
-#include <string.h>
-#include "inet_html_table.hpp"
-%}
-%define lookup-function-name inet_html_entity_lookup
-%compare-strncmp
-%struct-type
-struct INET_HTMLEntity;
-%%
-"""
-
-LOOKUP_TABLE_JSON = json.loads(LOOKUP_TABLE_STR)
-for key, value in LOOKUP_TABLE_JSON.items():
-    codepoints = []
-    for cp in value["codepoints"]:
-        codepoints.append(str(cp))
-    if len(codepoints) == 1:
-        codepoints.append("0")
-
-    GPERF_INPUT += f"{key[1:]}, {{{codepoints[0]}, {codepoints[1]}}}\n"
-
-
-# Now use gperf to generate the lookup table
-GPERF_INPUT += "%%\n"
-
-# Launch gperf as a subprocess and pipe the input to it
-# And pipe the output to a file
-with open("inet_html_table.cpp", "w") as f:
-    process = subprocess.Popen(
-        ["gperf", "-L", "ANSI-C"], stdin=subprocess.PIPE, stdout=f, stderr=subprocess.PIPE, text=True
-    )
-    stdout, stderr = process.communicate(input=GPERF_INPUT)
-    if process.returncode != 0:
-        print("Error running gperf:")
-        print(stderr)
-    else:
-        print("gperf output written to html_entity_lookup.cpp")
